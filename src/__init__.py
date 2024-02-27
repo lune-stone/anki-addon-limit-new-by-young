@@ -3,6 +3,7 @@ from aqt.utils import qconnect
 import aqt.qt as qt
 
 import re
+import sys
 import threading
 import time
 
@@ -34,12 +35,22 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
             continue
 
         deckConfig = mw.col.decks.config_dict_for_deck_id(deckIndentifer.id)
+        deck_size = len(list(mw.col.find_cards(f'deck:"{deckIndentifer.name}"')))
 
-        youngCount = len(list(mw.col.find_cards(f'deck:"{deckIndentifer.name}" prop:due<21 prop:ivl<21')))
-        youngCardLimit = addonConfigLimits['youngCardLimit']
+        youngCardLimit = addonConfigLimits.get('youngCardLimit', 999999999)
+        youngCount = 0 if youngCardLimit > deck_size else len(list(mw.col.find_cards(f'deck:"{deckIndentifer.name}" prop:due<21 prop:ivl<21')))
+
+        burdenLimit = addonConfigLimits.get('burdenLimit', 999999999)
+        burden = 0
+        try:
+            fsrs4anki_helper_stats = sys.modules['759844606.stats']
+            burden = 0 if burdenLimit > deck_size else int(fsrs4anki_helper_stats.retention_stability_burden(' AND did = ' + str(deckIndentifer.id))[2])
+        except:
+            pass # fsrs4anki-helper not installed
+
         maxNewCardsPerDay = deckConfig['new']['perDay']
 
-        newLimit = max(0, min(maxNewCardsPerDay, youngCardLimit - youngCount))
+        newLimit = max(0, min(maxNewCardsPerDay, youngCardLimit - youngCount, burdenLimit - burden))
 
         deck["newLimitToday"] = {"limit": newLimit, "today": mw.col.sched.today}
         mw.col.decks.save(deck)

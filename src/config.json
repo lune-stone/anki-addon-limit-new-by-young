@@ -8,6 +8,12 @@
       "youngCardLimit": 999999
     },
     {
+      "deckNames": [
+        "lorem ipsum 3"
+      ],
+      "burdenLimit": 100
+    },
+    {
       "deckNames": "lorem ipsum [0-9]+",
       "youngCardLimit": 50
     }
