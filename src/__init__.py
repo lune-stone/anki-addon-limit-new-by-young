@@ -15,8 +15,6 @@ def deckBurden(did: int) -> int:
     SELECT SUM(1.0 / max(1, ivl))
     FROM cards c1
     WHERE queue >= 1
-    AND data != ''
-    AND json_extract(data, '$.s') IS NOT NULL
     AND did = {str(did)}
     """
     )[0] or 0)
