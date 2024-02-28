@@ -25,6 +25,8 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
     addonConfig = mw.addonManager.getConfig(__name__)
     today = mw.col.sched.today
 
+    limitsWereChanged = False
+
     if hookEnabledConfigKey and not addonConfig[hookEnabledConfigKey]:
         return
 
@@ -63,6 +65,9 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
 
         deck["newLimitToday"] = {"limit": newLimit, "today": mw.col.sched.today}
         mw.col.decks.save(deck)
+        limitsWereChanged = True
+
+    if limitsWereChanged:
         mw.reset()
 
 def updateLimitsOnIntervalLoop():
