@@ -16,9 +16,7 @@ If you do not wish to limit the number of young cards, but plan on using other t
 
 ### `burdenLimit`
 
-Requires that fsrs4anki-helper is installed, otherwise this will be ignored.
-
-A positive integer that represents the upper limit for a reviews/day burden of a deck based on the "burden" statistic from fsrs4anki-helper. New cards will be limited each day by the difference between `burdenLimit` and the calculated deck burden value. This limit does not replace existing daily limits on new cards but will work together with them. For example if there are too many reviews in addition to too much burden for today, then the new card limit for the day will be set to the minimum value between the two limits.
+A positive integer that represents the upper limit for a reviews/day burden of a deck based on the "burden" estimate from fsrs4anki-helper. You can view this value by installing fsrs4anki-helper, then loading the legacy stats view for the click using `shift+click` on the `stats` tab. Limiting by burden rather than reviews can sometimes be useful if for example you have a large backlog of reviews but want to continue studying new material while you catch up. New cards will be limited each day by the difference between `burdenLimit` and the calculated deck burden value. This limit does not replace existing daily limits on new cards but will work together with them. For example if there are too many reviews in addition to too much burden for today, then the new card limit for the day will be set to the minimum value between the two limits.
 
 If you do not wish to limit the max burden for the deck, but plan on using other types of limits then you can either remove the `burdenLimit` key from the json object, or set the value above the deck size.
 

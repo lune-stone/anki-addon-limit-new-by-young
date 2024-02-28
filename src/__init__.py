@@ -7,6 +7,20 @@ import sys
 import threading
 import time
 
+# copy the burden calculation from https://github.com/open-spaced-repetition/fsrs4anki-helper/blob/6d6de3af7e8f3e0801cef1f562a48dbf80d69769/stats.py#L25
+def deckBurden(did: int) -> int:
+    '''Takes in a number deck id, returns the estimated burden in reviews per day'''
+    return int(mw.col.db.first(
+        f"""
+    SELECT SUM(1.0 / max(1, ivl))
+    FROM cards c1
+    WHERE queue >= 1
+    AND data != ''
+    AND json_extract(data, '$.s') IS NOT NULL
+    AND did = {str(did)}
+    """
+    )[0] or 0)
+
 def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
     addonConfig = mw.addonManager.getConfig(__name__)
     today = mw.col.sched.today
@@ -41,12 +55,7 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
         youngCount = 0 if youngCardLimit > deck_size else len(list(mw.col.find_cards(f'deck:"{deckIndentifer.name}" prop:due<21 prop:ivl<21')))
 
         burdenLimit = addonConfigLimits.get('burdenLimit', 999999999)
-        burden = 0
-        try:
-            fsrs4anki_helper_stats = sys.modules['759844606.stats']
-            burden = 0 if burdenLimit > deck_size else int(fsrs4anki_helper_stats.retention_stability_burden(' AND did = ' + str(deckIndentifer.id))[2])
-        except:
-            pass # fsrs4anki-helper not installed
+        burden = 0 if burdenLimit > deck_size else deckBurden(deckIndentifer.id)
 
         maxNewCardsPerDay = deckConfig['new']['perDay']
 
