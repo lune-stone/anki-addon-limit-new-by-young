@@ -1,6 +1,7 @@
 from aqt import mw, gui_hooks
 from aqt.utils import qconnect
 import aqt.qt as qt
+from anki.utils import ids2str
 
 import re
 import sys
@@ -10,12 +11,13 @@ import time
 # copy the burden calculation from https://github.com/open-spaced-repetition/fsrs4anki-helper/blob/6d6de3af7e8f3e0801cef1f562a48dbf80d69769/stats.py#L25
 def deckBurden(did: int) -> int:
     '''Takes in a number deck id, returns the estimated burden in reviews per day'''
+    subdeck_id = ids2str(mw.col.decks.deck_and_child_ids(did))
     return int(mw.col.db.first(
         f"""
     SELECT SUM(1.0 / max(1, ivl))
     FROM cards c1
     WHERE queue >= 1
-    AND did = {str(did)}
+    AND did IN {subdeck_id}
     """
     )[0] or 0)
 
