@@ -16,6 +16,8 @@ A positive integer that represents the number of young cards that the deck shoul
 
 If you do not wish to limit the number of young cards, but plan on using other types of limits then you can either remove the `youngCardLimit` key from the json object, or set the value above the deck size.
 
+Picking the value to use as the limit can be tricky as the ideal value will vary from person to person as well as deck to deck. If you have one or more days were your new cards are being limited but you do well on your reviews and still have time to spare then consider raising the limit. If instead you find that your retention on young cards is not as high as retention for mature cards you may need to reduce the value.
+
 ### `loadLimit`
 
 A positive integer that represents the upper limit for a reviews/day load of a deck based on the "daily load" estimate from fsrs4anki-helper. You can view this value by installing fsrs4anki-helper, then loading the legacy stats view for the click using `shift+click` on the `stats` tab. Limiting by load rather than reviews can sometimes be useful if for example you have a large backlog of reviews but want to continue studying new material while you catch up. New cards will be limited each day by the difference between `loadLimit` and the calculated deck load value. This limit does not replace existing daily limits on new cards but will work together with them. For example if there are too many reviews in addition to too much load for today, then the new card limit for the day will be set to the minimum value between the two limits.
