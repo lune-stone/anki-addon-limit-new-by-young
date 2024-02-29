@@ -8,9 +8,9 @@ import sys
 import threading
 import time
 
-# copy the burden calculation from https://github.com/open-spaced-repetition/fsrs4anki-helper/blob/6d6de3af7e8f3e0801cef1f562a48dbf80d69769/stats.py#L25
-def deckBurden(did: int) -> int:
-    '''Takes in a number deck id, returns the estimated burden in reviews per day'''
+# copy the dailyLoad calculation from https://github.com/open-spaced-repetition/fsrs4anki-helper/blob/19581d42a957285a8d949aea0564f81296a62b81/stats.py#L25
+def dailyLoad(did: int) -> int:
+    '''Takes in a number deck id, returns the estimated load in reviews per day'''
     subdeck_id = ids2str(mw.col.decks.deck_and_child_ids(did))
     return int(mw.col.db.first(
         f"""
@@ -56,12 +56,12 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
         youngCardLimit = addonConfigLimits.get('youngCardLimit', 999999999)
         youngCount = 0 if youngCardLimit > deck_size else len(list(mw.col.find_cards(f'deck:"{deckIndentifer.name}" prop:due<21 prop:ivl<21')))
 
-        burdenLimit = addonConfigLimits.get('burdenLimit', 999999999)
-        burden = 0 if burdenLimit > deck_size else deckBurden(deckIndentifer.id)
+        loadLimit = addonConfigLimits.get('loadLimit', 999999999)
+        load = 0 if loadLimit > deck_size else dailyLoad(deckIndentifer.id)
 
         maxNewCardsPerDay = deckConfig['new']['perDay']
 
-        newLimit = max(0, min(maxNewCardsPerDay, youngCardLimit - youngCount, burdenLimit - burden))
+        newLimit = max(0, min(maxNewCardsPerDay, youngCardLimit - youngCount, loadLimit - load))
 
         deck["newLimitToday"] = {"limit": newLimit, "today": mw.col.sched.today}
         mw.col.decks.save(deck)
