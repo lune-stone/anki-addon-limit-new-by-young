@@ -1,14 +1,31 @@
 from aqt import mw, gui_hooks
 from aqt.utils import qconnect
 import aqt.qt as qt
+from anki.utils import ids2str
 
 import re
+import sys
 import threading
 import time
+
+# copy the dailyLoad calculation from https://github.com/open-spaced-repetition/fsrs4anki-helper/blob/19581d42a957285a8d949aea0564f81296a62b81/stats.py#L25
+def dailyLoad(did: int) -> int:
+    '''Takes in a number deck id, returns the estimated load in reviews per day'''
+    subdeck_id = ids2str(mw.col.decks.deck_and_child_ids(did))
+    return round(mw.col.db.first(
+        f"""
+    SELECT SUM(1.0 / max(1, ivl))
+    FROM cards
+    WHERE queue != 0 AND queue != -1
+    AND did IN {subdeck_id}
+    """
+    )[0] or 0)
 
 def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
     addonConfig = mw.addonManager.getConfig(__name__)
     today = mw.col.sched.today
+
+    limitsWereChanged = False
 
     if hookEnabledConfigKey and not addonConfig[hookEnabledConfigKey]:
         return
@@ -34,15 +51,24 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
             continue
 
         deckConfig = mw.col.decks.config_dict_for_deck_id(deckIndentifer.id)
+        deck_size = len(list(mw.col.find_cards(f'deck:"{deckIndentifer.name}" -is:suspended')))
+        introduced_today = len(list(mw.col.find_cards(f'deck:"{deckIndentifer.name}" introduced:1')))
 
-        youngCount = len(list(mw.col.find_cards(f'deck:"{deckIndentifer.name}" prop:due<21 prop:ivl<21')))
-        youngCardLimit = addonConfigLimits['youngCardLimit']
+        youngCardLimit = addonConfigLimits.get('youngCardLimit', 999999999)
+        youngCount = 0 if youngCardLimit > deck_size else len(list(mw.col.find_cards(f'deck:"{deckIndentifer.name}" prop:ivl>0 prop:ivl<21 -is:suspended')))
+
+        loadLimit = addonConfigLimits.get('loadLimit', 999999999)
+        load = 0 if loadLimit > deck_size else dailyLoad(deckIndentifer.id)
+
         maxNewCardsPerDay = deckConfig['new']['perDay']
 
-        newLimit = max(0, min(maxNewCardsPerDay, youngCardLimit - youngCount))
+        newLimit = max(0, min(maxNewCardsPerDay - introduced_today, youngCardLimit - youngCount, loadLimit - load)) + introduced_today
 
         deck["newLimitToday"] = {"limit": newLimit, "today": mw.col.sched.today}
         mw.col.decks.save(deck)
+        limitsWereChanged = True
+
+    if limitsWereChanged:
         mw.reset()
 
 def updateLimitsOnIntervalLoop():
