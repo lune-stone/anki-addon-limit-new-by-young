@@ -55,7 +55,7 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
         introduced_today = len(list(mw.col.find_cards(f'deck:"{deckIndentifer.name}" introduced:1')))
 
         youngCardLimit = addonConfigLimits.get('youngCardLimit', 999999999)
-        youngCount = 0 if youngCardLimit > deck_size else len(list(mw.col.find_cards(f'deck:"{deckIndentifer.name}" prop:due<21 prop:ivl<21 -is:suspended')))
+        youngCount = 0 if youngCardLimit > deck_size else len(list(mw.col.find_cards(f'deck:"{deckIndentifer.name}" prop:ivl<21 -is:suspended')))
 
         loadLimit = addonConfigLimits.get('loadLimit', 999999999)
         load = 0 if loadLimit > deck_size else dailyLoad(deckIndentifer.id)
