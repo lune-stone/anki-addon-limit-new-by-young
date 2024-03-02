@@ -52,6 +52,7 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
 
         deckConfig = mw.col.decks.config_dict_for_deck_id(deckIndentifer.id)
         deck_size = len(list(mw.col.find_cards(f'deck:"{deckIndentifer.name}"')))
+        introduced_today = len(list(mw.col.find_cards(f'deck:"{deckIndentifer.name}" introduced:1')))
 
         youngCardLimit = addonConfigLimits.get('youngCardLimit', 999999999)
         youngCount = 0 if youngCardLimit > deck_size else len(list(mw.col.find_cards(f'deck:"{deckIndentifer.name}" prop:due<21 prop:ivl<21')))
@@ -61,7 +62,7 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
 
         maxNewCardsPerDay = deckConfig['new']['perDay']
 
-        newLimit = max(0, min(maxNewCardsPerDay, youngCardLimit - youngCount, loadLimit - load))
+        newLimit = max(0, min(maxNewCardsPerDay - introduced_today, youngCardLimit - youngCount, loadLimit - load)) + introduced_today
 
         deck["newLimitToday"] = {"limit": newLimit, "today": mw.col.sched.today}
         mw.col.decks.save(deck)
