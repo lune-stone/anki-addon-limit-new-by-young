@@ -21,5 +21,6 @@
   "updateLimitsOnApplicationStartup": false,
   "updateLimitsAfterSync": false,
   "updateLimitsOnInterval": false,
-  "updateLimitsIntervalTimeInMinutes": 15
+  "updateLimitsIntervalTimeInMinutes": 15,
+  "showNotifications": false
 }

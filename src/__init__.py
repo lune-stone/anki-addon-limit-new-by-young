@@ -2,12 +2,14 @@ from aqt import mw, gui_hooks
 from aqt.utils import qconnect
 import aqt.qt as qt
 from anki.utils import ids2str
+from aqt.operations import QueryOp
+from aqt.utils import tooltip
 
 import re
 import sys
 import threading
 import time
-from typing import NewType
+from typing import Callable, NewType
 
 DeckId = NewType("DeckId", int)
 
@@ -46,10 +48,13 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
     addonConfig = mw.addonManager.getConfig(__name__)
     today = mw.col.sched.today
 
-    limitsWereChanged = False
+    limitsChanged = 0
 
     if hookEnabledConfigKey and not addonConfig[hookEnabledConfigKey]:
         return
+
+    if addonConfig.get('showNotifications', False):
+        mw.taskman.run_on_main(lambda: tooltip('Updating limits...'))
 
     mapping = ruleMapping()
 
@@ -80,12 +85,15 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
 
         newLimit = max(0, min(maxNewCardsPerDay - introduced_today, youngCardLimit - youngCount, loadLimit - load)) + introduced_today
 
-        deck["newLimitToday"] = {"limit": newLimit, "today": mw.col.sched.today}
-        mw.col.decks.save(deck)
-        limitsWereChanged = True
+        if not(limitAlreadySet and deck["newLimitToday"]["limit"] == newLimit):
+            deck["newLimitToday"] = {"limit": newLimit, "today": mw.col.sched.today}
+            mw.col.decks.save(deck)
+            limitsChanged += 1
 
-    if limitsWereChanged:
-        mw.reset()
+    if limitsChanged > 0:
+        mw.taskman.run_on_main(mw.reset)
+    if addonConfig.get('showNotifications', False):
+        mw.taskman.run_on_main(lambda: tooltip(f'Updated {limitsChanged} limits.'))
 
 def textDialog(message: str) -> None:
     textEdit = qt.QPlainTextEdit(message)
@@ -165,6 +173,9 @@ def limitUtilizationReport() -> str:
 
     return '\n'.join(lines)
 
+def execInBackground(func: Callable) -> Callable:
+    return lambda: QueryOp(parent=mw, op=lambda col: func(), success=lambda *a, **k: None).run_in_background()
+
 def updateLimitsOnIntervalLoop():
     time.sleep(5 * 60) #HACK wait for anki to finish loading
     while True:
@@ -172,19 +183,19 @@ def updateLimitsOnIntervalLoop():
         sleepInterval = max(60, addonConfig['updateLimitsIntervalTimeInMinutes'] * 60)
         time.sleep(sleepInterval)
 
-        mw.taskman.run_on_main(lambda: updateLimits(hookEnabledConfigKey='updateLimitsOnInterval'))
+        updateLimits(hookEnabledConfigKey='updateLimitsOnInterval')
 
 updateLimitsOnIntervalThread = threading.Thread(target=updateLimitsOnIntervalLoop, daemon=True)
 updateLimitsOnIntervalThread.start()
 
-gui_hooks.main_window_did_init.append(lambda: updateLimits(hookEnabledConfigKey='updateLimitsOnApplicationStartup'))
+gui_hooks.main_window_did_init.append(execInBackground(lambda: updateLimits(hookEnabledConfigKey='updateLimitsOnApplicationStartup')))
 gui_hooks.sync_did_finish.append(lambda: updateLimits(hookEnabledConfigKey='updateLimitsAfterSync'))
 
 menu = qt.QMenu("Limit New by Young", mw)
 mw.form.menuTools.addMenu(menu)
 
 recalculate = qt.QAction("Recalculate today's new card limit for all decks", menu)
-qconnect(recalculate.triggered, lambda: updateLimits(forceUpdate=True))
+qconnect(recalculate.triggered, execInBackground(lambda: updateLimits(forceUpdate=True)))
 menu.addAction(recalculate)
 
 ruleMappingReportAction = qt.QAction("Show rule mapping report", menu)
