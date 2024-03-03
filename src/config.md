@@ -37,3 +37,7 @@ When using `true` the add-on will automatically update the new card limit even t
 ### `updateLimitsIntervalTimeInMinutes`
 
 When `updateLimitsOnInterval` is set to true, the time in minutes in between updating the new card limit. If `updateLimitsOnInterval` is false, this setting has no effect.
+
+### `showNotifications`
+
+When `showNotifications` is set to true, a notification will be shown at the start and end of the process each time limits are updated.

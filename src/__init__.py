@@ -3,6 +3,7 @@ from aqt.utils import qconnect
 import aqt.qt as qt
 from anki.utils import ids2str
 from aqt.operations import QueryOp
+from aqt.utils import tooltip
 
 import re
 import sys
@@ -47,10 +48,13 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
     addonConfig = mw.addonManager.getConfig(__name__)
     today = mw.col.sched.today
 
-    limitsWereChanged = False
+    limitsChanged = 0
 
     if hookEnabledConfigKey and not addonConfig[hookEnabledConfigKey]:
         return
+
+    if addonConfig.get('showNotifications', False):
+        mw.taskman.run_on_main(lambda: tooltip('Updating limits...'))
 
     mapping = ruleMapping()
 
@@ -81,12 +85,15 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
 
         newLimit = max(0, min(maxNewCardsPerDay - introduced_today, youngCardLimit - youngCount, loadLimit - load)) + introduced_today
 
-        deck["newLimitToday"] = {"limit": newLimit, "today": mw.col.sched.today}
-        mw.col.decks.save(deck)
-        limitsWereChanged = True
+        if not(limitAlreadySet and deck["newLimitToday"]["limit"] == newLimit):
+            deck["newLimitToday"] = {"limit": newLimit, "today": mw.col.sched.today}
+            mw.col.decks.save(deck)
+            limitsChanged += 1
 
-    if limitsWereChanged:
+    if limitsChanged > 0:
         mw.taskman.run_on_main(mw.reset)
+    if addonConfig.get('showNotifications', False):
+        mw.taskman.run_on_main(lambda: tooltip(f'Updated {limitsChanged} limits.'))
 
 def textDialog(message: str) -> None:
     textEdit = qt.QPlainTextEdit(message)
