@@ -152,7 +152,7 @@ def limitUtilizationReport() -> str:
         rule = {} if not mapping[did] else limits[mapping[did][0]]
         youngLimit = rule.get('youngCardLimit', float('inf'))
 
-        rows.append("%s%% (%d of %s)\t%s" % ("{:.2f}".format(100.0 * (youngCount / youngLimit)), youngCount, str(youngLimit), deckName))
+        rows.append("%s%% (%d of %s)\t%s" % ("{:.2f}".format(100.0 * (youngCount / max(youngLimit, sys.float_info.epsilon))), youngCount, str(youngLimit), deckName))
     rows.sort(key=lambda x: -1 * float(x.split('%')[0]))
     lines.extend(rows)
 
@@ -167,7 +167,7 @@ def limitUtilizationReport() -> str:
         rule = {} if not mapping[did] else limits[mapping[did][0]]
         loadLimit = rule.get('loadLimit', float('inf'))
 
-        rows.append("%s%% (%d of %s)\t%s" % ("{:.2f}".format(100.0 * (load / loadLimit)), load, str(loadLimit), deckName))
+        rows.append("%s%% (%d of %s)\t%s" % ("{:.2f}".format(100.0 * (load / max(loadLimit, sys.float_info.epsilon))), load, str(loadLimit), deckName))
     rows.sort(key=lambda x: -1 * float(x.split('%')[0]))
     lines.extend(rows)
 
