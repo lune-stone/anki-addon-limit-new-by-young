@@ -7,6 +7,23 @@ import re
 import sys
 import threading
 import time
+from typing import NewType
+
+DeckId = NewType("DeckId", int)
+
+def ruleMapping() -> dict[DeckId, list[int]]:
+    """returns the indices for matching rules where the first index is the one that determines the limits for the deck"""
+    ret = {}
+
+    addonConfig = mw.addonManager.getConfig(__name__)
+    for deckIndentifer in mw.col.decks.all_names_and_ids(include_filtered=False):
+        ret[deckIndentifer.id] = []
+        for idx, limits in enumerate(addonConfig["limits"]):
+                if (isinstance(limits["deckNames"], str) and re.compile(limits["deckNames"]).match(deckIndentifer.name)) \
+                    or (isinstance(limits["deckNames"], list) and deckIndentifer.name in limits["deckNames"]):
+                        ret[deckIndentifer.id].append(idx)
+
+    return ret
 
 # copy the dailyLoad calculation from https://github.com/open-spaced-repetition/fsrs4anki-helper/blob/19581d42a957285a8d949aea0564f81296a62b81/stats.py#L25
 def dailyLoad(did: int) -> int:
@@ -21,6 +38,10 @@ def dailyLoad(did: int) -> int:
     """
     )[0] or 0)
 
+def young(deckName: str) -> int:
+    '''Takes in a number deck name prefix, returns the number of young cards excluding suspended'''
+    return len(list(mw.col.find_cards(f'deck:"{deckName}" -is:learn is:review prop:ivl<21 -is:suspended')))
+
 def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
     addonConfig = mw.addonManager.getConfig(__name__)
     today = mw.col.sched.today
@@ -30,20 +51,15 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
     if hookEnabledConfigKey and not addonConfig[hookEnabledConfigKey]:
         return
 
+    mapping = ruleMapping()
+
     for deckIndentifer in mw.col.decks.all_names_and_ids():
+        matchingRulesIdxs = mapping.get(deckIndentifer.id, [])
+        if not matchingRulesIdxs:
+            continue
+
+        addonConfigLimits = addonConfig["limits"][matchingRulesIdxs[0]]
         deck = mw.col.decks.get(deckIndentifer.id)
-        if deck['dyn'] == 1:
-            continue # ignore 'Custom Study Session' style decks
-
-        addonConfigLimits = None
-        for limits in addonConfig["limits"]:
-            if (isinstance(limits["deckNames"], str) and re.compile(limits["deckNames"]).match(deckIndentifer.name)) \
-                or (isinstance(limits["deckNames"], list) and deckIndentifer.name in limits["deckNames"]):
-                    addonConfigLimits = limits
-                    break
-
-        if not addonConfigLimits:
-            continue # no user defined limits to apply
 
         limitAlreadySet = False if deck["newLimitToday"] is None else deck["newLimitToday"]["today"] == today
 
@@ -55,7 +71,7 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
         introduced_today = len(list(mw.col.find_cards(f'deck:"{deckIndentifer.name}" introduced:1')))
 
         youngCardLimit = addonConfigLimits.get('youngCardLimit', 999999999)
-        youngCount = 0 if youngCardLimit > deck_size else len(list(mw.col.find_cards(f'deck:"{deckIndentifer.name}" -is:learn is:review prop:ivl<21 -is:suspended')))
+        youngCount = 0 if youngCardLimit > deck_size else young(deckIndentifer.name)
 
         loadLimit = addonConfigLimits.get('loadLimit', 999999999)
         load = 0 if loadLimit > deck_size else dailyLoad(deckIndentifer.id)
@@ -70,6 +86,84 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
 
     if limitsWereChanged:
         mw.reset()
+
+def textDialog(message: str) -> None:
+    textEdit = qt.QPlainTextEdit(message)
+    textEdit.setReadOnly(True)
+    textEdit.setSizePolicy(qt.QSizePolicy.Policy.Expanding, qt.QSizePolicy.Policy.Expanding)
+
+    layout = qt.QVBoxLayout()
+    layout.addWidget(textEdit)
+
+    dialog = qt.QDialog(mw)
+    dialog.setGeometry(0, 0, 800, 800)
+    dialog.setLayout(layout)
+    dialog.show()
+
+def ruleMappingReport() -> str:
+    limits = mw.addonManager.getConfig(__name__)['limits']
+    deckNames = {x.id: x.name for x in mw.col.decks.all_names_and_ids(include_filtered=False)}
+    mapping = ruleMapping()
+
+    lines = []
+    for idx, limit in enumerate(limits):
+        lines.append(f'rule #{idx + 1}: {str(limit)}')
+
+        applies = [k for (k,v) in mapping.items() if v[0:1] == [idx]]
+        matches = [k for (k,v) in mapping.items() if idx in v and k not in applies]
+
+        lines.append('\tApplies to:')
+        for name in sorted([deckNames[x] for x in applies]):
+            lines.append(f'\t\t{name}')
+
+        if matches:
+            lines.append('\tMatches, but is already covered by an earlier rule:')
+            for name, rule in sorted([(deckNames[x], mapping[x][0] + 1) for x in matches]):
+                lines.append(f'\t\t{name} -> rule #{rule}')
+
+        lines.append('')
+
+    lines.append('not covered by any rules:')
+    for name in sorted([deckNames[k] for (k,v) in mapping.items() if not v]):
+        lines.append(f'\t{name}')
+
+    return '\n'.join(lines)
+
+def limitUtilizationReport() -> str:
+    limits = mw.addonManager.getConfig(__name__)['limits']
+    deckNames = {x.id: x.name for x in mw.col.decks.all_names_and_ids(include_filtered=False)}
+    mapping = ruleMapping()
+
+    lines = []
+
+    lines.append('=== Young Limit ===')
+    lines.append('')
+    rows = []
+    for did, deckName in sorted(deckNames.items(), key=lambda x: x[1]):
+        youngCount = young(deckName)
+        rule = {} if not mapping[did] else limits[mapping[did][0]]
+        youngLimit = rule.get('youngCardLimit', float('inf'))
+
+        rows.append("%s%% (%d of %s)\t%s" % ("{:.2f}".format(100.0 * (youngCount / youngLimit)), youngCount, str(youngLimit), deckName))
+    rows.sort(key=lambda x: -1 * float(x.split('%')[0]))
+    lines.extend(rows)
+
+    lines.append('')
+    lines.append('')
+
+    lines.append('=== Daily Load Limit ===')
+    lines.append('')
+    rows = []
+    for did, deckName in sorted(deckNames.items(), key=lambda x: x[1]):
+        load = dailyLoad(did)
+        rule = {} if not mapping[did] else limits[mapping[did][0]]
+        loadLimit = rule.get('loadLimit', float('inf'))
+
+        rows.append("%s%% (%d of %s)\t%s" % ("{:.2f}".format(100.0 * (load / loadLimit)), load, str(loadLimit), deckName))
+    rows.sort(key=lambda x: -1 * float(x.split('%')[0]))
+    lines.extend(rows)
+
+    return '\n'.join(lines)
 
 def updateLimitsOnIntervalLoop():
     time.sleep(5 * 60) #HACK wait for anki to finish loading
@@ -86,6 +180,17 @@ updateLimitsOnIntervalThread.start()
 gui_hooks.main_window_did_init.append(lambda: updateLimits(hookEnabledConfigKey='updateLimitsOnApplicationStartup'))
 gui_hooks.sync_did_finish.append(lambda: updateLimits(hookEnabledConfigKey='updateLimitsAfterSync'))
 
-action = qt.QAction("Recalculate today's new card limit for all decks", mw)
-qconnect(action.triggered, lambda: updateLimits(forceUpdate=True))
-mw.form.menuTools.addAction(action)
+menu = qt.QMenu("Limit New by Young", mw)
+mw.form.menuTools.addMenu(menu)
+
+recalculate = qt.QAction("Recalculate today's new card limit for all decks", menu)
+qconnect(recalculate.triggered, lambda: updateLimits(forceUpdate=True))
+menu.addAction(recalculate)
+
+ruleMappingReportAction = qt.QAction("Show rule mapping report", menu)
+qconnect(ruleMappingReportAction.triggered, lambda: textDialog(ruleMappingReport()))
+menu.addAction(ruleMappingReportAction)
+
+limitUtilizationReportAction = qt.QAction("Show limit utilization report", menu)
+qconnect(limitUtilizationReportAction.triggered, lambda: textDialog(limitUtilizationReport()))
+menu.addAction(limitUtilizationReportAction)
