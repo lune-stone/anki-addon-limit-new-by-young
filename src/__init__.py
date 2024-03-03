@@ -110,7 +110,7 @@ def ruleMappingReport() -> str:
         lines.append(f'rule #{idx + 1}: {str(limit)}')
 
         applies = [k for (k,v) in mapping.items() if v[0:1] == [idx]]
-        matches = [k for (k,v) in mapping.items() if k in v and k not in applies]
+        matches = [k for (k,v) in mapping.items() if idx in v and k not in applies]
 
         lines.append('\tApplies to:')
         for name in sorted([deckNames[x] for x in applies]):
