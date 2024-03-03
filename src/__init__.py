@@ -2,12 +2,13 @@ from aqt import mw, gui_hooks
 from aqt.utils import qconnect
 import aqt.qt as qt
 from anki.utils import ids2str
+from aqt.operations import QueryOp
 
 import re
 import sys
 import threading
 import time
-from typing import NewType
+from typing import Callable, NewType
 
 DeckId = NewType("DeckId", int)
 
@@ -85,7 +86,7 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
         limitsWereChanged = True
 
     if limitsWereChanged:
-        mw.reset()
+        mw.taskman.run_on_main(mw.reset)
 
 def textDialog(message: str) -> None:
     textEdit = qt.QPlainTextEdit(message)
@@ -165,6 +166,9 @@ def limitUtilizationReport() -> str:
 
     return '\n'.join(lines)
 
+def execInBackground(func: Callable) -> Callable:
+    return lambda: QueryOp(parent=mw, op=lambda col: func(), success=lambda *a, **k: None).run_in_background()
+
 def updateLimitsOnIntervalLoop():
     time.sleep(5 * 60) #HACK wait for anki to finish loading
     while True:
@@ -172,19 +176,19 @@ def updateLimitsOnIntervalLoop():
         sleepInterval = max(60, addonConfig['updateLimitsIntervalTimeInMinutes'] * 60)
         time.sleep(sleepInterval)
 
-        mw.taskman.run_on_main(lambda: updateLimits(hookEnabledConfigKey='updateLimitsOnInterval'))
+        updateLimits(hookEnabledConfigKey='updateLimitsOnInterval')
 
 updateLimitsOnIntervalThread = threading.Thread(target=updateLimitsOnIntervalLoop, daemon=True)
 updateLimitsOnIntervalThread.start()
 
-gui_hooks.main_window_did_init.append(lambda: updateLimits(hookEnabledConfigKey='updateLimitsOnApplicationStartup'))
+gui_hooks.main_window_did_init.append(execInBackground(lambda: updateLimits(hookEnabledConfigKey='updateLimitsOnApplicationStartup')))
 gui_hooks.sync_did_finish.append(lambda: updateLimits(hookEnabledConfigKey='updateLimitsAfterSync'))
 
 menu = qt.QMenu("Limit New by Young", mw)
 mw.form.menuTools.addMenu(menu)
 
 recalculate = qt.QAction("Recalculate today's new card limit for all decks", menu)
-qconnect(recalculate.triggered, lambda: updateLimits(forceUpdate=True))
+qconnect(recalculate.triggered, execInBackground(lambda: updateLimits(forceUpdate=True)))
 menu.addAction(recalculate)
 
 ruleMappingReportAction = qt.QAction("Show rule mapping report", menu)
