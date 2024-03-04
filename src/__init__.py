@@ -91,7 +91,10 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
             limitsChanged += 1
 
     if limitsChanged > 0:
-        mw.taskman.run_on_main(mw.reset)
+        def resetIfNeeded():
+            if mw.state in ['deckBrowser', 'overview']:
+                mw.reset()
+        mw.taskman.run_on_main(resetIfNeeded)
     if addonConfig.get('showNotifications', False):
         mw.taskman.run_on_main(lambda: tooltip(f'Updated {limitsChanged} limits.'))
 
@@ -177,7 +180,8 @@ def execInBackground(func: Callable) -> Callable:
     return lambda: QueryOp(parent=mw, op=lambda col: func(), success=lambda *a, **k: None).run_in_background()
 
 def updateLimitsOnIntervalLoop():
-    time.sleep(5 * 60) #HACK wait for anki to finish loading
+    while mw.state == 'startup':
+        time.sleep(60) # wait for config to be accessible
     while True:
         addonConfig = mw.addonManager.getConfig(__name__)
         sleepInterval = max(60, addonConfig['updateLimitsIntervalTimeInMinutes'] * 60)
