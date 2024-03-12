@@ -11,7 +11,7 @@
       "deckNames": [
         "lorem ipsum 3"
       ],
-      "loadLimit": 100
+      "loadLimit": 100.0
     },
     {
       "deckNames": "lorem ipsum [0-9]+",

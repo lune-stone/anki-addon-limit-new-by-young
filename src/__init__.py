@@ -28,17 +28,17 @@ def ruleMapping() -> dict[DeckId, list[int]]:
     return ret
 
 # copy the dailyLoad calculation from https://github.com/open-spaced-repetition/fsrs4anki-helper/blob/19581d42a957285a8d949aea0564f81296a62b81/stats.py#L25
-def dailyLoad(did: int) -> int:
+def dailyLoad(did: int) -> float:
     '''Takes in a number deck id, returns the estimated load in reviews per day'''
     subdeck_id = ids2str(mw.col.decks.deck_and_child_ids(did))
-    return round(mw.col.db.first(
+    return mw.col.db.first(
         f"""
     SELECT SUM(1.0 / max(1, ivl))
     FROM cards
     WHERE queue != 0 AND queue != -1
     AND did IN {subdeck_id}
     """
-    )[0] or 0)
+    )[0] or 0
 
 def young(deckName: str) -> int:
     '''Takes in a number deck name prefix, returns the number of young cards excluding suspended'''
@@ -79,11 +79,11 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
         youngCount = 0 if youngCardLimit > deck_size else young(deckIndentifer.name)
 
         loadLimit = addonConfigLimits.get('loadLimit', 999999999)
-        load = 0 if loadLimit > deck_size else dailyLoad(deckIndentifer.id)
+        load = 0.0 if loadLimit > deck_size else dailyLoad(deckIndentifer.id)
 
         maxNewCardsPerDay = deckConfig['new']['perDay']
 
-        newLimit = max(0, min(maxNewCardsPerDay - introduced_today, youngCardLimit - youngCount, loadLimit - load)) + introduced_today
+        newLimit = max(0, min(maxNewCardsPerDay - introduced_today, youngCardLimit - youngCount, round(loadLimit - load))) + introduced_today
 
         if not(limitAlreadySet and deck["newLimitToday"]["limit"] == newLimit):
             deck["newLimitToday"] = {"limit": newLimit, "today": mw.col.sched.today}
@@ -155,7 +155,7 @@ def limitUtilizationReport() -> str:
         rule = {} if not mapping[did] else limits[mapping[did][0]]
         youngLimit = rule.get('youngCardLimit', float('inf'))
 
-        rows.append("%s%% (%d of %s)\t%s" % ("{:.2f}".format(100.0 * (youngCount / max(youngLimit, sys.float_info.epsilon))), youngCount, str(youngLimit), deckName))
+        rows.append(f"{100.0 * (youngCount / max(youngLimit, sys.float_info.epsilon)):.2f}% ({youngCount} of {youngLimit})\t{deckName}")
     rows.sort(key=lambda x: -1 * float(x.split('%')[0]))
     lines.extend(rows)
 
@@ -168,9 +168,9 @@ def limitUtilizationReport() -> str:
     for did, deckName in sorted(deckNames.items(), key=lambda x: x[1]):
         load = dailyLoad(did)
         rule = {} if not mapping[did] else limits[mapping[did][0]]
-        loadLimit = rule.get('loadLimit', float('inf'))
+        loadLimit = float(rule.get('loadLimit', float('inf')))
 
-        rows.append("%s%% (%d of %s)\t%s" % ("{:.2f}".format(100.0 * (load / max(loadLimit, sys.float_info.epsilon))), load, str(loadLimit), deckName))
+        rows.append(f"{100.0 * (load / max(loadLimit, sys.float_info.epsilon)):.2f}% ({load:.2f} of {loadLimit})\t{deckName}")
     rows.sort(key=lambda x: -1 * float(x.split('%')[0]))
     lines.extend(rows)
 
