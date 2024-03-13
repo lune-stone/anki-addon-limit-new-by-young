@@ -5,6 +5,7 @@ from anki.utils import ids2str
 from aqt.operations import QueryOp
 from aqt.utils import tooltip
 
+import math
 import re
 import sys
 import threading
@@ -83,7 +84,7 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
 
         maxNewCardsPerDay = deckConfig['new']['perDay']
 
-        newLimit = max(0, min(maxNewCardsPerDay - introduced_today, youngCardLimit - youngCount, round(loadLimit - load))) + introduced_today
+        newLimit = max(0, min(maxNewCardsPerDay - introduced_today, youngCardLimit - youngCount, math.ceil(loadLimit - load))) + introduced_today
 
         if not(limitAlreadySet and deck["newLimitToday"]["limit"] == newLimit):
             deck["newLimitToday"] = {"limit": newLimit, "today": mw.col.sched.today}
