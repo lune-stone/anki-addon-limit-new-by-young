@@ -75,6 +75,8 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
         deckConfig = mw.col.decks.config_dict_for_deck_id(deckIndentifer.id)
         deck_size = len(list(mw.col.find_cards(f'deck:"{deckIndentifer.name}" -is:suspended')))
         introduced_today = len(list(mw.col.find_cards(f'deck:"{deckIndentifer.name}" introduced:1')))
+        customStudyNewCardLimitChangeAmount = deck['newToday'][1] # negative value for increase
+        introduced_today = max(0, introduced_today + customStudyNewCardLimitChangeAmount)
 
         youngCardLimit = addonConfigLimits.get('youngCardLimit', 999999999)
         youngCount = 0 if youngCardLimit > deck_size else young(deckIndentifer.name)
