@@ -84,7 +84,7 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
 
         maxNewCardsPerDay = deckConfig['new']['perDay']
 
-        newLimit = max(0, min(maxNewCardsPerDay - new_today, youngCardLimit - youngCount, math.ceil(loadLimit - load))) + new_today
+        newLimit = max(0, min(maxNewCardsPerDay - new_today, youngCardLimit - youngCount, math.ceil(loadLimit - load)) + new_today)
 
         if not(limitAlreadySet and deck["newLimitToday"]["limit"] == newLimit):
             deck["newLimitToday"] = {"limit": newLimit, "today": mw.col.sched.today}
