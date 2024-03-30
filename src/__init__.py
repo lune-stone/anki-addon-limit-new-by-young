@@ -146,34 +146,37 @@ def limitUtilizationReport() -> str:
     deckNames = {x.id: x.name for x in mw.col.decks.all_names_and_ids(include_filtered=False)}
     mapping = ruleMapping()
 
-    lines = []
+    def utilizationForLimit(limitConfigKey, deckIndentiferLimitFunc):
+        rows = []
+        for did, deckName in sorted(deckNames.items(), key=lambda x: x[1]):
+            deckIndentifer = {'id': did, 'name': deckName}
+            rule = {} if not mapping[did] else limits[mapping[did][0]]
+            limit = rule.get(limitConfigKey, float('inf'))
+            value = deckIndentiferLimitFunc(deckIndentifer)
+            utilization = 100.0 * (value / max(limit, sys.float_info.epsilon))
+            rows.append([utilization, value, limit, deckName])
+        rows.sort(key=lambda x: -1 * x[0])
 
+        ret = []
+        for utilization, value, limit, deckName in rows:
+            utilization = f'{min(9999.99, utilization):.2f}'
+            value = f'{value:.2f}' if isinstance(value, float) else value
+            limit = '∞' if limit == float('inf') else limit
+            limit = f'{value:.2f}' if isinstance(limit, float) else limit
+            ret.append(f'{utilization}% ({value} of {limit})\t{deckName}')
+        return ret
+
+    lines = []
     lines.append('=== Young Limit ===')
     lines.append('')
-    rows = []
-    for did, deckName in sorted(deckNames.items(), key=lambda x: x[1]):
-        youngCount = young(deckName)
-        rule = {} if not mapping[did] else limits[mapping[did][0]]
-        youngLimit = rule.get('youngCardLimit', float('inf'))
-
-        rows.append(f"{100.0 * (youngCount / max(youngLimit, sys.float_info.epsilon)):.2f}% ({youngCount} of {youngLimit})\t{deckName}")
-    rows.sort(key=lambda x: -1 * float(x.split('%')[0]))
-    lines.extend(rows)
+    lines.extend(utilizationForLimit('youngCardLimit', lambda deckIndentifer: young(deckIndentifer['name'])))
 
     lines.append('')
     lines.append('')
 
     lines.append('=== Daily Load Limit ===')
     lines.append('')
-    rows = []
-    for did, deckName in sorted(deckNames.items(), key=lambda x: x[1]):
-        load = dailyLoad(did)
-        rule = {} if not mapping[did] else limits[mapping[did][0]]
-        loadLimit = float(rule.get('loadLimit', float('inf')))
-
-        rows.append(f"{100.0 * (load / max(loadLimit, sys.float_info.epsilon)):.2f}% ({load:.2f} of {loadLimit})\t{deckName}")
-    rows.sort(key=lambda x: -1 * float(x.split('%')[0]))
-    lines.extend(rows)
+    lines.extend(utilizationForLimit('loadLimit', lambda deckIndentifer: dailyLoad(deckIndentifer['id'])))
 
     return '\n'.join(lines)
 
