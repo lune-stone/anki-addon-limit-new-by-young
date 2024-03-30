@@ -45,6 +45,10 @@ def young(deckName: str) -> int:
     '''Takes in a number deck name prefix, returns the number of young cards excluding suspended'''
     return len(list(mw.col.find_cards(f'deck:"{deckName}" -is:learn is:review prop:ivl<21 -is:suspended')))
 
+def soon(deckName: str, days: int) -> int:
+    '''returns the number of cards about to be due excluding suspended'''
+    return len(list(mw.col.find_cards(f'deck:"{deckName}" prop:due<{days} -is:suspended')))
+
 def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
     addonConfig = mw.addonManager.getConfig(__name__)
     today = mw.col.sched.today
@@ -82,9 +86,13 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
         loadLimit = addonConfigLimits.get('loadLimit', 999999999)
         load = 0.0 if loadLimit > deck_size else dailyLoad(deckIndentifer.id)
 
+        soonDays = addonConfigLimits.get('soonDays', 7)
+        soonLimit = addonConfigLimits.get('soonLimit', 999999999)
+        soonCount = 0 if soonLimit > deck_size else soon(deckIndentifer.name, soonDays)
+
         maxNewCardsPerDay = deckConfig['new']['perDay']
 
-        newLimit = max(0, min(maxNewCardsPerDay - new_today, youngCardLimit - youngCount, math.ceil(loadLimit - load)) + new_today)
+        newLimit = max(0, min(maxNewCardsPerDay - new_today, youngCardLimit - youngCount, math.ceil(loadLimit - load), soonLimit - soonCount) + new_today)
 
         if not(limitAlreadySet and deck["newLimitToday"]["limit"] == newLimit):
             deck["newLimitToday"] = {"limit": newLimit, "today": mw.col.sched.today}
@@ -152,7 +160,7 @@ def limitUtilizationReport() -> str:
             deckIndentifer = {'id': did, 'name': deckName}
             rule = {} if not mapping[did] else limits[mapping[did][0]]
             limit = rule.get(limitConfigKey, float('inf'))
-            value = deckIndentiferLimitFunc(deckIndentifer)
+            value = deckIndentiferLimitFunc(deckIndentifer, rule)
             utilization = 100.0 * (value / max(limit, sys.float_info.epsilon))
             rows.append([utilization, value, limit, deckName])
         rows.sort(key=lambda x: -1 * x[0])
@@ -169,14 +177,21 @@ def limitUtilizationReport() -> str:
     lines = []
     lines.append('=== Young Limit ===')
     lines.append('')
-    lines.extend(utilizationForLimit('youngCardLimit', lambda deckIndentifer: young(deckIndentifer['name'])))
+    lines.extend(utilizationForLimit('youngCardLimit', lambda deckIndentifer, rule: young(deckIndentifer['name'])))
 
     lines.append('')
     lines.append('')
 
     lines.append('=== Daily Load Limit ===')
     lines.append('')
-    lines.extend(utilizationForLimit('loadLimit', lambda deckIndentifer: dailyLoad(deckIndentifer['id'])))
+    lines.extend(utilizationForLimit('loadLimit', lambda deckIndentifer, rule: dailyLoad(deckIndentifer['id'])))
+
+    lines.append('')
+    lines.append('')
+
+    lines.append('=== Soon Limit ===')
+    lines.append('')
+    lines.extend(utilizationForLimit('soonLimit', lambda deckIndentifer, rule: soon(deckIndentifer['name'], rule.get('soonDays', 7))))
 
     return '\n'.join(lines)
 
