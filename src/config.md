@@ -1,4 +1,4 @@
-## Configure in this screen
+## Configuration on this Screen
 
 ### `limits`
 
