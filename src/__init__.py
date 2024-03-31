@@ -163,7 +163,9 @@ def limitUtilizationReport() -> str:
             value = deckIndentiferLimitFunc(deckIndentifer, rule)
             utilization = 100.0 * (value / max(limit, sys.float_info.epsilon))
             rows.append([utilization, value, limit, deckName])
-        rows.sort(key=lambda x: -1 * x[0])
+        # by utilization then value
+        rows.sort(key=lambda x: x[1], reverse=True)
+        rows.sort(key=lambda x: x[0], reverse=True)
 
         ret = []
         for utilization, value, limit, deckName in rows:
