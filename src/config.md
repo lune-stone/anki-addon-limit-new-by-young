@@ -28,7 +28,7 @@ If you do not wish to limit the max load for the deck, but plan on using other t
 
 A positive integer that represents the upper limit for how many upcoming cards of a deck in the next n days where n is determined by the value of `soonDays`. This value does not replace existing daily limits on new cards but will work together with them. For example if there are too many reviews in addition to too much cards becoming due in the near future, then the new card limit for the day will be set to the minimum value between the two limits.
 
-If you do not wish to limit the number of young cards, but plan on using other types of limits then you can either remove the `soonLimit` key from the json object, or set the value above the deck size.
+If you do not wish to limit new cards by the number of cards due soon, but plan on using other types of limits then you can either remove the `soonLimit` key from the json object, or set the value above the deck size.
 
 ### `soonDays`
 
