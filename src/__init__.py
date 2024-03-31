@@ -170,7 +170,7 @@ def limitUtilizationReport() -> str:
             utilization = f'{min(9999.99, utilization):.2f}'
             value = f'{value:.2f}' if isinstance(value, float) else value
             limit = '∞' if limit == float('inf') else limit
-            limit = f'{value:.2f}' if isinstance(limit, float) else limit
+            limit = f'{limit:.2f}' if isinstance(limit, float) else limit
             ret.append(f'{utilization}% ({value} of {limit})\t{deckName}')
         return ret
 
