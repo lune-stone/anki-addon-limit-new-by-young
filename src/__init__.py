@@ -10,6 +10,7 @@ import re
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from typing import Callable, NewType
 
 DeckId = NewType("DeckId", int)
@@ -120,6 +121,69 @@ def textDialog(message: str) -> None:
     dialog.setLayout(layout)
     dialog.show()
 
+def utilizationDialog() -> None:
+    data = limitUtilizationReportData()
+
+    textEdit = qt.QPlainTextEdit("")
+    textEdit.setReadOnly(True)
+    textEdit.setSizePolicy(qt.QSizePolicy.Policy.Expanding, qt.QSizePolicy.Policy.Expanding)
+
+    empty = qt.QCheckBox("Empty")
+    noLimit = qt.QCheckBox("No defined limit")
+    notStarted = qt.QCheckBox("Not started")
+    complete = qt.QCheckBox("Complete")
+    overLimit = qt.QCheckBox("Over limit")
+    underLimit = qt.QCheckBox("Under limit")
+
+    filters = qt.QHBoxLayout()
+
+    layout = qt.QVBoxLayout()
+    layout.addLayout(filters)
+    layout.addWidget(textEdit)
+
+    dialog = qt.QDialog(mw)
+    dialog.setGeometry(0, 0, 800, 800)
+    dialog.setLayout(layout)
+
+    def render():
+        d = [x for x in data]
+        d = [x for x in d if empty.isChecked() or x.deckSize > 0]
+        d = [x for x in d if noLimit.isChecked() or not math.isinf(x.limit)]
+        d = [x for x in d if notStarted.isChecked() or x.learned > 0]
+        d = [x for x in d if complete.isChecked() or x.learned < x.deckSize]
+        d = [x for x in d if overLimit.isChecked() or x.value <= x.limit]
+        d = [x for x in d if underLimit.isChecked() or x.value >= x.limit]
+
+        lines = []
+        lines.append('=== Young Limit ===')
+        lines.append('')
+        lines.extend([str(x) for x in d if x.limitType == 'youngCardLimit'])
+
+        lines.append('')
+        lines.append('')
+
+        lines.append('=== Daily Load Limit ===')
+        lines.append('')
+        lines.extend([str(x) for x in d if x.limitType == 'loadLimit'])
+
+        lines.append('')
+        lines.append('')
+
+        lines.append('=== Soon Limit ===')
+        lines.append('')
+        lines.extend([str(x) for x in d if x.limitType == 'soonLimit'])
+
+        message = '\n'.join(lines)
+        textEdit.setPlainText(message)
+
+    for checkBox in [empty, noLimit, notStarted, complete, overLimit, underLimit]:
+        checkBox.setChecked(True)
+        filters.addWidget(checkBox)
+        checkBox.stateChanged.connect(render)
+
+    render()
+    dialog.show()
+
 def ruleMappingReport() -> str:
     limits = mw.addonManager.getConfig(__name__)['limits']
     deckNames = {x.id: x.name for x in mw.col.decks.all_names_and_ids(include_filtered=False)}
@@ -149,7 +213,27 @@ def ruleMappingReport() -> str:
 
     return '\n'.join(lines)
 
-def limitUtilizationReport() -> str:
+@dataclass(order=True)
+class UtilizationRow:
+    ordinal: (float, float, float)
+    utilization: float
+    value: int | float
+    limit: int | float
+    limitType: str
+    ###
+    deckId: int
+    deckName: str
+    deckSize: int
+    learned: int
+
+    def __str__(self):
+        utilization = f'{min(9999.99, self.utilization):.2f}'
+        value = f'{self.value:.2f}' if isinstance(self.value, float) else self.value
+        limit = '∞' if self.limit == float('inf') else self.limit
+        limit = f'{limit:.2f}' if isinstance(limit, float) else limit
+        return f'{utilization}% ({value} of {limit})\t{self.deckName}'
+
+def limitUtilizationReportData() -> [UtilizationRow]:
     limits = mw.addonManager.getConfig(__name__)['limits']
     deckNames = {x.id: x.name for x in mw.col.decks.all_names_and_ids(include_filtered=False)}
     mapping = ruleMapping()
@@ -162,41 +246,19 @@ def limitUtilizationReport() -> str:
             limit = rule.get(limitConfigKey, float('inf'))
             value = deckIndentiferLimitFunc(deckIndentifer, rule)
             utilization = 100.0 * (value / max(limit, sys.float_info.epsilon))
-            rows.append([utilization, value, limit, deckName])
-        # by utilization, value, then limit
-        rows.sort(key=lambda x: x[2], reverse=False)
-        rows.sort(key=lambda x: x[1], reverse=True)
-        rows.sort(key=lambda x: x[0], reverse=True)
+            deckSize = len(list(mw.col.find_cards(f'deck:"{deckName}" -is:suspended')))
+            learned = len(list(mw.col.find_cards(f'deck:"{deckName}" (is:learn OR is:review) -is:suspended')))
 
-        ret = []
-        for utilization, value, limit, deckName in rows:
-            utilization = f'{min(9999.99, utilization):.2f}'
-            value = f'{value:.2f}' if isinstance(value, float) else value
-            limit = '∞' if limit == float('inf') else limit
-            limit = f'{limit:.2f}' if isinstance(limit, float) else limit
-            ret.append(f'{utilization}% ({value} of {limit})\t{deckName}')
-        return ret
+            row = UtilizationRow((-utilization, -value, limit, deckName), utilization, value, limit, limitConfigKey, did, deckName, deckSize, learned)
+            rows.append(row)
+        return rows
 
-    lines = []
-    lines.append('=== Young Limit ===')
-    lines.append('')
-    lines.extend(utilizationForLimit('youngCardLimit', lambda deckIndentifer, rule: young(deckIndentifer['name'])))
-
-    lines.append('')
-    lines.append('')
-
-    lines.append('=== Daily Load Limit ===')
-    lines.append('')
-    lines.extend(utilizationForLimit('loadLimit', lambda deckIndentifer, rule: dailyLoad(deckIndentifer['id'])))
-
-    lines.append('')
-    lines.append('')
-
-    lines.append('=== Soon Limit ===')
-    lines.append('')
-    lines.extend(utilizationForLimit('soonLimit', lambda deckIndentifer, rule: soon(deckIndentifer['name'], rule.get('soonDays', 7))))
-
-    return '\n'.join(lines)
+    ret = []
+    ret.extend(utilizationForLimit('youngCardLimit', lambda deckIndentifer, rule: young(deckIndentifer['name'])))
+    ret.extend(utilizationForLimit('loadLimit', lambda deckIndentifer, rule: dailyLoad(deckIndentifer['id'])))
+    ret.extend(utilizationForLimit('soonLimit', lambda deckIndentifer, rule: soon(deckIndentifer['name'], rule.get('soonDays', 7))))
+    ret.sort()
+    return ret
 
 def execInBackground(func: Callable) -> Callable:
     return lambda: QueryOp(parent=mw, op=lambda col: func(), success=lambda *a, **k: None).run_in_background()
@@ -229,5 +291,5 @@ qconnect(ruleMappingReportAction.triggered, lambda: textDialog(ruleMappingReport
 menu.addAction(ruleMappingReportAction)
 
 limitUtilizationReportAction = qt.QAction("Show limit utilization report", menu)
-qconnect(limitUtilizationReportAction.triggered, lambda: textDialog(limitUtilizationReport()))
+qconnect(limitUtilizationReportAction.triggered, lambda: utilizationDialog())
 menu.addAction(limitUtilizationReportAction)
