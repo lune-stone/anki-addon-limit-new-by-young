@@ -36,18 +36,21 @@ def dailyLoad(did: int) -> float:
         f"""
     SELECT SUM(1.0 / max(1, ivl))
     FROM cards
-    WHERE queue != 0 AND queue != -1
+    WHERE queue NOT IN (0, -1, -2, -3) -- NEW, SUSPENDED, SIBLING_BURIED, MANUALLY_BURIED
     AND did IN {subdeck_id}
     """
     )[0] or 0
 
 def young(deckName: str) -> int:
     '''Takes in a number deck name prefix, returns the number of young cards excluding suspended'''
-    return len(list(mw.col.find_cards(f'deck:"{deckName}" -is:learn is:review prop:ivl<21 -is:suspended')))
+    return len(list(mw.col.find_cards(f'deck:"{deckName}" -is:learn is:review prop:ivl<21 -is:suspended  -is:buried')))
 
 def soon(deckName: str, days: int) -> int:
     '''returns the number of cards about to be due excluding suspended'''
-    return len(list(mw.col.find_cards(f'deck:"{deckName}" prop:due<{days} -is:suspended')))
+    return len(list(mw.col.find_cards(f'deck:"{deckName}" prop:due<{days} -is:suspended  -is:buried')))
+
+def deckSize(deckName: str) -> int:
+    len(list(mw.col.find_cards(f'deck:"{deckName}" -is:suspended  -is:buried')))
 
 def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
     addonConfig = mw.addonManager.getConfig(__name__)
@@ -77,7 +80,7 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
             continue
 
         deckConfig = mw.col.decks.config_dict_for_deck_id(deckIndentifer.id)
-        deck_size = len(list(mw.col.find_cards(f'deck:"{deckIndentifer.name}" -is:suspended')))
+        deck_size = deckSize(deckIndentifer.name)
         new_today = 0 if mw.col.sched.today != deck['newToday'][0] else deck['newToday'][1]
 
         youngCardLimit = addonConfigLimits.get('youngCardLimit', 999999999)
