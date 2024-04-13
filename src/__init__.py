@@ -5,6 +5,7 @@ from anki.utils import ids2str
 from aqt.operations import QueryOp
 from aqt.utils import tooltip
 
+import dataclasses
 import math
 import re
 import sys
@@ -136,7 +137,12 @@ def utilizationDialog() -> None:
     underLimit = qt.QCheckBox("Under limit")
     subDeck = qt.QCheckBox("Sub deck")
 
+    detailLevel = qt.QComboBox()
+    detailLevel.addItem('Summary')
+    detailLevel.addItem('Verbose')
+
     filters = qt.QHBoxLayout()
+    filters.addWidget(detailLevel)
 
     layout = qt.QVBoxLayout()
     layout.addLayout(filters)
@@ -157,23 +163,29 @@ def utilizationDialog() -> None:
         d = [x for x in d if subDeck.isChecked() or not '::' in x.deckName]
 
         lines = []
-        lines.append('=== Young Limit ===')
-        lines.append('')
-        lines.extend([str(x) for x in d if x.limitType == 'youngCardLimit'])
 
-        lines.append('')
-        lines.append('')
+        if detailLevel.currentText() == 'Summary':
+            lines.append('=== Limit Summary ===')
+            lines.append('')
+            lines.extend([str(x) for x in d if x.detailLevel == 'Summary'])
+        else:
+            lines.append('=== Young Limit ===')
+            lines.append('')
+            lines.extend([str(x) for x in d if x.limitType == 'youngCardLimit' and x.detailLevel == 'Verbose'])
 
-        lines.append('=== Daily Load Limit ===')
-        lines.append('')
-        lines.extend([str(x) for x in d if x.limitType == 'loadLimit'])
+            lines.append('')
+            lines.append('')
 
-        lines.append('')
-        lines.append('')
+            lines.append('=== Daily Load Limit ===')
+            lines.append('')
+            lines.extend([str(x) for x in d if x.limitType == 'loadLimit' and x.detailLevel == 'Verbose'])
 
-        lines.append('=== Soon Limit ===')
-        lines.append('')
-        lines.extend([str(x) for x in d if x.limitType == 'soonLimit'])
+            lines.append('')
+            lines.append('')
+
+            lines.append('=== Soon Limit ===')
+            lines.append('')
+            lines.extend([str(x) for x in d if x.limitType == 'soonLimit' and x.detailLevel == 'Verbose'])
 
         message = '\n'.join(lines)
         textEdit.setPlainText(message)
@@ -182,6 +194,7 @@ def utilizationDialog() -> None:
         checkBox.setChecked(True)
         filters.addWidget(checkBox)
         checkBox.stateChanged.connect(render)
+        detailLevel.activated.connect(render)
 
     render()
     dialog.show()
@@ -221,6 +234,7 @@ class UtilizationRow:
     utilization: float
     value: int | float
     limit: int | float
+    detailLevel: str
     limitType: str
     ###
     deckId: int
@@ -233,7 +247,9 @@ class UtilizationRow:
         value = f'{self.value:.2f}' if isinstance(self.value, float) else self.value
         limit = '∞' if self.limit == float('inf') else self.limit
         limit = f'{limit:.2f}' if isinstance(limit, float) else limit
-        return f'{utilization}% ({value} of {limit})\t{self.deckName}'
+        limitType = '' if self.detailLevel == 'Verbose' else f'\t[{self.limitType}]'
+        limitType = re.sub('[A-Z][a-zA-Z]*', '', limitType) # `young, soon, load` rather than `youngCardLimit, ...`
+        return f'{utilization}% ({value} of {limit}){limitType}\t{self.deckName}'
 
 def limitUtilizationReportData() -> [UtilizationRow]:
     limits = mw.addonManager.getConfig(__name__)['limits']
@@ -251,7 +267,7 @@ def limitUtilizationReportData() -> [UtilizationRow]:
             deckSize = len(list(mw.col.find_cards(f'deck:"{deckName}" -is:suspended')))
             learned = len(list(mw.col.find_cards(f'deck:"{deckName}" (is:learn OR is:review) -is:suspended')))
 
-            row = UtilizationRow((-utilization, -value, limit, deckName), utilization, value, limit, limitConfigKey, did, deckName, deckSize, learned)
+            row = UtilizationRow((-utilization, -value, limit, deckName), utilization, value, limit, 'Verbose', limitConfigKey, did, deckName, deckSize, learned)
             rows.append(row)
         return rows
 
@@ -260,6 +276,17 @@ def limitUtilizationReportData() -> [UtilizationRow]:
     ret.extend(utilizationForLimit('loadLimit', lambda deckIndentifer, rule: dailyLoad(deckIndentifer['id'])))
     ret.extend(utilizationForLimit('soonLimit', lambda deckIndentifer, rule: soon(deckIndentifer['name'], rule.get('soonDays', 7))))
     ret.sort()
+
+    summary = {}
+    for row in ret:
+        l = summary.get(row.deckId, [])
+        row = dataclasses.replace(row)
+        row.detailLevel = 'Summary'
+        l.append(row)
+        summary[row.deckId] = l
+    summary = sorted([x[0] for x in summary.values()])
+    ret.extend(summary)
+
     return ret
 
 def execInBackground(func: Callable) -> Callable:
