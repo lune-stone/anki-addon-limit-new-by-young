@@ -134,6 +134,7 @@ def utilizationDialog() -> None:
     complete = qt.QCheckBox("Complete")
     overLimit = qt.QCheckBox("Over limit")
     underLimit = qt.QCheckBox("Under limit")
+    subDeck = qt.QCheckBox("Sub deck")
 
     filters = qt.QHBoxLayout()
 
@@ -153,6 +154,7 @@ def utilizationDialog() -> None:
         d = [x for x in d if complete.isChecked() or x.learned < x.deckSize]
         d = [x for x in d if overLimit.isChecked() or x.value <= x.limit]
         d = [x for x in d if underLimit.isChecked() or x.value >= x.limit]
+        d = [x for x in d if subDeck.isChecked() or not '::' in x.deckName]
 
         lines = []
         lines.append('=== Young Limit ===')
@@ -176,7 +178,7 @@ def utilizationDialog() -> None:
         message = '\n'.join(lines)
         textEdit.setPlainText(message)
 
-    for checkBox in [empty, noLimit, notStarted, complete, overLimit, underLimit]:
+    for checkBox in [empty, noLimit, notStarted, complete, overLimit, underLimit, subDeck]:
         checkBox.setChecked(True)
         filters.addWidget(checkBox)
         checkBox.stateChanged.connect(render)
