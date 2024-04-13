@@ -109,7 +109,7 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
     if addonConfig.get('showNotifications', False):
         mw.taskman.run_on_main(lambda: tooltip(f'Updated {limitsChanged} limits.'))
 
-def textDialog(message: str) -> None:
+def textDialog(message: str, title: str) -> None:
     textEdit = qt.QPlainTextEdit(message)
     textEdit.setReadOnly(True)
     textEdit.setSizePolicy(qt.QSizePolicy.Policy.Expanding, qt.QSizePolicy.Policy.Expanding)
@@ -118,6 +118,7 @@ def textDialog(message: str) -> None:
     layout.addWidget(textEdit)
 
     dialog = qt.QDialog(mw)
+    dialog.setWindowTitle(title)
     dialog.setGeometry(0, 0, 800, 800)
     dialog.setLayout(layout)
     dialog.show()
@@ -149,6 +150,7 @@ def utilizationDialog() -> None:
     layout.addWidget(textEdit)
 
     dialog = qt.QDialog(mw)
+    dialog.setWindowTitle('Limit Utilization Report')
     dialog.setGeometry(0, 0, 800, 800)
     dialog.setLayout(layout)
 
@@ -316,7 +318,7 @@ qconnect(recalculate.triggered, execInBackground(lambda: updateLimits(forceUpdat
 menu.addAction(recalculate)
 
 ruleMappingReportAction = qt.QAction("Show rule mapping report", menu)
-qconnect(ruleMappingReportAction.triggered, lambda: textDialog(ruleMappingReport()))
+qconnect(ruleMappingReportAction.triggered, lambda: textDialog(ruleMappingReport(), 'Rule Mapping Report'))
 menu.addAction(ruleMappingReportAction)
 
 limitUtilizationReportAction = qt.QAction("Show limit utilization report", menu)
