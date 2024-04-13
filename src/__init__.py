@@ -50,7 +50,7 @@ def soon(deckName: str, days: int) -> int:
     return len(list(mw.col.find_cards(f'deck:"{deckName}" prop:due<{days} -is:suspended  -is:buried')))
 
 def deckSize(deckName: str) -> int:
-    return len(list(mw.col.find_cards(f'deck:"{deckName}" -is:suspended  -is:buried')))
+    len(list(mw.col.find_cards(f'deck:"{deckName}" -is:suspended  -is:buried')))
 
 def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
     addonConfig = mw.addonManager.getConfig(__name__)
