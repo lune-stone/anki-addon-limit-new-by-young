@@ -125,18 +125,21 @@ def textDialog(message: str, title: str) -> None:
 
 def utilizationDialog() -> None:
     data = limitUtilizationReportData()
+    uiConfig = mw.addonManager.getConfig(__name__).get('utilizationReport', {})
 
     textEdit = qt.QPlainTextEdit("")
     textEdit.setReadOnly(True)
     textEdit.setSizePolicy(qt.QSizePolicy.Policy.Expanding, qt.QSizePolicy.Policy.Expanding)
 
-    empty = qt.QCheckBox("Empty")
-    noLimit = qt.QCheckBox("No defined limit")
-    notStarted = qt.QCheckBox("Not started")
-    complete = qt.QCheckBox("Complete")
-    overLimit = qt.QCheckBox("Over limit")
-    underLimit = qt.QCheckBox("Under limit")
-    subDeck = qt.QCheckBox("Sub deck")
+    checkboxes = {
+        'empty': qt.QCheckBox("Empty"),
+        'noLimit': qt.QCheckBox("No defined limit"),
+        'notStarted': qt.QCheckBox("Not started"),
+        'complete': qt.QCheckBox("Complete"),
+        'overLimit': qt.QCheckBox("Over limit"),
+        'underLimit': qt.QCheckBox("Under limit"),
+        'subDeck': qt.QCheckBox("Sub deck")
+    }
 
     detailLevel = qt.QComboBox()
     detailLevel.addItem('Summary')
@@ -154,15 +157,31 @@ def utilizationDialog() -> None:
     dialog.setGeometry(0, 0, 800, 800)
     dialog.setLayout(layout)
 
+    def saveConfig():
+        config = mw.addonManager.getConfig(__name__)
+        if not config.get('rememberLastUiSettings', True):
+            return
+        config['utilizationReport'] = {
+                "detailLevel": detailLevel.currentText(),
+                "empty": checkboxes['empty'].isChecked(),
+                "noLimit": checkboxes['noLimit'].isChecked(),
+                "notStarted": checkboxes['notStarted'].isChecked(),
+                "complete": checkboxes['complete'].isChecked(),
+                "overLimit": checkboxes['overLimit'].isChecked(),
+                "underLimit": checkboxes['underLimit'].isChecked(),
+                "subDeck": checkboxes['subDeck'].isChecked()
+            }
+        mw.addonManager.writeConfig(__name__, config)
+
     def render():
         d = [x for x in data]
-        d = [x for x in d if empty.isChecked() or x.deckSize > 0]
-        d = [x for x in d if noLimit.isChecked() or not math.isinf(x.limit)]
-        d = [x for x in d if notStarted.isChecked() or x.learned > 0]
-        d = [x for x in d if complete.isChecked() or x.learned < x.deckSize]
-        d = [x for x in d if overLimit.isChecked() or x.value <= x.limit]
-        d = [x for x in d if underLimit.isChecked() or x.value >= x.limit]
-        d = [x for x in d if subDeck.isChecked() or not '::' in x.deckName]
+        d = [x for x in d if checkboxes['empty'].isChecked() or x.deckSize > 0]
+        d = [x for x in d if checkboxes['noLimit'].isChecked() or not math.isinf(x.limit)]
+        d = [x for x in d if checkboxes['notStarted'].isChecked() or x.learned > 0]
+        d = [x for x in d if checkboxes['complete'].isChecked() or x.learned < x.deckSize]
+        d = [x for x in d if checkboxes['overLimit'].isChecked() or x.value <= x.limit]
+        d = [x for x in d if checkboxes['underLimit'].isChecked() or x.value >= x.limit]
+        d = [x for x in d if checkboxes['subDeck'].isChecked() or not '::' in x.deckName]
 
         lines = []
 
@@ -192,11 +211,14 @@ def utilizationDialog() -> None:
         message = '\n'.join(lines)
         textEdit.setPlainText(message)
 
-    for checkBox in [empty, noLimit, notStarted, complete, overLimit, underLimit, subDeck]:
-        checkBox.setChecked(True)
+    for configName, checkBox in checkboxes.items():
         filters.addWidget(checkBox)
+        checkBox.setChecked(bool(uiConfig.get(configName, True)))
         checkBox.stateChanged.connect(render)
-        detailLevel.activated.connect(render)
+        checkBox.stateChanged.connect(saveConfig)
+    detailLevel.setCurrentText(uiConfig.get('detailLevel', 'Verbose'))
+    detailLevel.activated.connect(render)
+    detailLevel.activated.connect(saveConfig)
 
     render()
     dialog.show()

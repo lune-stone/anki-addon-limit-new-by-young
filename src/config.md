@@ -53,3 +53,56 @@ When `updateLimitsOnInterval` is set to true, the time in minutes in between upd
 ### `showNotifications`
 
 When `showNotifications` is set to true, a notification will be shown at the start and end of the process each time limits are updated.
+
+### `rememberLastUiSettings`
+
+When `rememberLastUiSettings` is set to true, ui controls will persist their last state via configuration each time their value is updated. Set to false to have the ui discard changes and use configuration values each time the ui is reloaded.
+
+### `utilizationReport.detailLevel`
+
+Controls the default "Detail Level" combobox when the utilization report is loaded. If `rememberLastUiSettings` is enabled this value will auto update to match the last value selected when the ui is used.
+
+Using `Verbose` will show limits and their current utilization. `Summary` will only show at most single limit per deck choosing the limit with the highest utilization.
+
+### `utilizationReport.empty`
+
+Controls the default "Empty" checkbox when the utilization report is loaded. If `rememberLastUiSettings` is enabled this value will auto update to match the last value selected when the ui is used.
+
+Using `True` will show decks that are empty, or have no cards.
+
+### `utilizationReport.noLimit`
+
+Controls the default "No Limit" checkbox when the utilization report is loaded. If `rememberLastUiSettings` is enabled this value will auto update to match the last value selected when the ui is used.
+
+Using `True` will show decks that do not have a defined limit.
+
+### `utilizationReport.notStarted`
+
+Controls the default "Not Started" checkbox when the utilization report is loaded. If `rememberLastUiSettings` is enabled this value will auto update to match the last value selected when the ui is used.
+
+Using `True` will show decks that have no cards with review data.
+
+### `utilizationReport.complete`
+
+Controls the default "Completed" checkbox when the utilization report is loaded. If `rememberLastUiSettings` is enabled this value will auto update to match the last value selected when the ui is used.
+
+Using `True` will show decks that only have cards with review data.
+
+### `utilizationReport.overLimit`
+
+Controls the default "Over Limit" checkbox when the utilization report is loaded. If `rememberLastUiSettings` is enabled this value will auto update to match the last value selected when the ui is used.
+
+Using `True` will show decks that have a utilization > 100%.
+
+### `utilizationReport.underLimit`
+
+Controls the default "Under Limit" checkbox when the utilization report is loaded. If `rememberLastUiSettings` is enabled this value will auto update to match the last value selected when the ui is used.
+
+Using `True` will show decks that have a utilization < 100%.
+
+### `utilizationReport.subDeck`
+
+
+Controls the default "Sub Deck" checkbox when the utilization report is loaded. If `rememberLastUiSettings` is enabled this value will auto update to match the last value selected when the ui is used.
+
+Using `True` will show decks that belong to a parent deck.
