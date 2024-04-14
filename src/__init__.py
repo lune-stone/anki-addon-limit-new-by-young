@@ -34,11 +34,11 @@ def dailyLoad(did: int) -> float:
     subdeck_id = ids2str(mw.col.decks.deck_and_child_ids(did))
     return mw.col.db.first(
         f"""
-    SELECT SUM(1.0 / ivl)
+    SELECT SUM(1.0 / max(1, ivl))
     FROM cards
     WHERE queue != -1 -- not suspended
     AND did IN {subdeck_id}
-    AND ivl >= 1 -- not new
+    AND type != 0 -- not new
     """
     )[0] or 0
 
