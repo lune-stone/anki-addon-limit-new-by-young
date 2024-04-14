@@ -44,7 +44,7 @@ def dailyLoad(did: int) -> float:
 
 def young(deckName: str) -> int:
     '''Takes in a number deck name prefix, returns the number of young cards excluding suspended'''
-    return len(list(mw.col.find_cards(f'deck:"{deckName}" -is:learn is:review prop:ivl<21 -is:suspended')))
+    return len(list(mw.col.find_cards(f'deck:"{deckName}" -is:new prop:ivl<21 -is:suspended')))
 
 def soon(deckName: str, days: int) -> int:
     '''returns the number of cards about to be due excluding suspended'''
