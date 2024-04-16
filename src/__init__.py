@@ -5,11 +5,13 @@ from anki.utils import ids2str
 from aqt.operations import QueryOp
 from aqt.utils import tooltip
 
+import dataclasses
 import math
 import re
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from typing import Callable, NewType
 
 DeckId = NewType("DeckId", int)
@@ -108,7 +110,7 @@ def updateLimits(hookEnabledConfigKey=None, forceUpdate=False) -> None:
     if addonConfig.get('showNotifications', False):
         mw.taskman.run_on_main(lambda: tooltip(f'Updated {limitsChanged} limits.'))
 
-def textDialog(message: str) -> None:
+def textDialog(message: str, title: str) -> None:
     textEdit = qt.QPlainTextEdit(message)
     textEdit.setReadOnly(True)
     textEdit.setSizePolicy(qt.QSizePolicy.Policy.Expanding, qt.QSizePolicy.Policy.Expanding)
@@ -117,8 +119,109 @@ def textDialog(message: str) -> None:
     layout.addWidget(textEdit)
 
     dialog = qt.QDialog(mw)
+    dialog.setWindowTitle(title)
     dialog.setGeometry(0, 0, 800, 800)
     dialog.setLayout(layout)
+    dialog.show()
+
+def utilizationDialog() -> None:
+    data = limitUtilizationReportData()
+    uiConfig = mw.addonManager.getConfig(__name__).get('utilizationReport', {})
+
+    textEdit = qt.QPlainTextEdit("")
+    textEdit.setReadOnly(True)
+    textEdit.setSizePolicy(qt.QSizePolicy.Policy.Expanding, qt.QSizePolicy.Policy.Expanding)
+
+    checkboxes = {
+        'empty': qt.QCheckBox("Empty"),
+        'noLimit': qt.QCheckBox("No defined limit"),
+        'notStarted': qt.QCheckBox("Not started"),
+        'complete': qt.QCheckBox("Complete"),
+        'overLimit': qt.QCheckBox("Over limit"),
+        'underLimit': qt.QCheckBox("Under limit"),
+        'subDeck': qt.QCheckBox("Sub deck")
+    }
+
+    detailLevel = qt.QComboBox()
+    detailLevel.addItem('Summary')
+    detailLevel.addItem('Verbose')
+
+    filters = qt.QHBoxLayout()
+    filters.addWidget(detailLevel)
+
+    layout = qt.QVBoxLayout()
+    layout.addLayout(filters)
+    layout.addWidget(textEdit)
+
+    dialog = qt.QDialog(mw)
+    dialog.setWindowTitle('Limit Utilization Report')
+    dialog.setGeometry(0, 0, 800, 800)
+    dialog.setLayout(layout)
+
+    def saveConfig():
+        config = mw.addonManager.getConfig(__name__)
+        if not config.get('rememberLastUiSettings', True):
+            return
+        config['utilizationReport'] = {
+                "detailLevel": detailLevel.currentText(),
+                "empty": checkboxes['empty'].isChecked(),
+                "noLimit": checkboxes['noLimit'].isChecked(),
+                "notStarted": checkboxes['notStarted'].isChecked(),
+                "complete": checkboxes['complete'].isChecked(),
+                "overLimit": checkboxes['overLimit'].isChecked(),
+                "underLimit": checkboxes['underLimit'].isChecked(),
+                "subDeck": checkboxes['subDeck'].isChecked()
+            }
+        mw.addonManager.writeConfig(__name__, config)
+
+    def render():
+        d = [x for x in data]
+        d = [x for x in d if checkboxes['empty'].isChecked() or x.deckSize > 0]
+        d = [x for x in d if checkboxes['noLimit'].isChecked() or not math.isinf(x.limit)]
+        d = [x for x in d if checkboxes['notStarted'].isChecked() or x.learned > 0]
+        d = [x for x in d if checkboxes['complete'].isChecked() or x.learned < x.deckSize]
+        d = [x for x in d if checkboxes['overLimit'].isChecked() or x.value <= x.limit]
+        d = [x for x in d if checkboxes['underLimit'].isChecked() or x.value >= x.limit]
+        d = [x for x in d if checkboxes['subDeck'].isChecked() or not '::' in x.deckName]
+
+        lines = []
+
+        if detailLevel.currentText() == 'Summary':
+            lines.append('=== Limit Summary ===')
+            lines.append('')
+            lines.extend([str(x) for x in d if x.detailLevel == 'Summary'])
+        else:
+            lines.append('=== Young Limit ===')
+            lines.append('')
+            lines.extend([str(x) for x in d if x.limitType == 'youngCardLimit' and x.detailLevel == 'Verbose'])
+
+            lines.append('')
+            lines.append('')
+
+            lines.append('=== Daily Load Limit ===')
+            lines.append('')
+            lines.extend([str(x) for x in d if x.limitType == 'loadLimit' and x.detailLevel == 'Verbose'])
+
+            lines.append('')
+            lines.append('')
+
+            lines.append('=== Soon Limit ===')
+            lines.append('')
+            lines.extend([str(x) for x in d if x.limitType == 'soonLimit' and x.detailLevel == 'Verbose'])
+
+        message = '\n'.join(lines)
+        textEdit.setPlainText(message)
+
+    for configName, checkBox in checkboxes.items():
+        filters.addWidget(checkBox)
+        checkBox.setChecked(bool(uiConfig.get(configName, True)))
+        checkBox.stateChanged.connect(render)
+        checkBox.stateChanged.connect(saveConfig)
+    detailLevel.setCurrentText(uiConfig.get('detailLevel', 'Verbose'))
+    detailLevel.activated.connect(render)
+    detailLevel.activated.connect(saveConfig)
+
+    render()
     dialog.show()
 
 def ruleMappingReport() -> str:
@@ -150,7 +253,30 @@ def ruleMappingReport() -> str:
 
     return '\n'.join(lines)
 
-def limitUtilizationReport() -> str:
+@dataclass(order=True)
+class UtilizationRow:
+    ordinal: (float, float, float)
+    utilization: float
+    value: int | float
+    limit: int | float
+    detailLevel: str
+    limitType: str
+    ###
+    deckId: int
+    deckName: str
+    deckSize: int
+    learned: int
+
+    def __str__(self):
+        utilization = f'{min(9999.99, self.utilization):.2f}'
+        value = f'{self.value:.2f}' if isinstance(self.value, float) else self.value
+        limit = '∞' if self.limit == float('inf') else self.limit
+        limit = f'{limit:.2f}' if isinstance(limit, float) else limit
+        limitType = '' if self.detailLevel == 'Verbose' else f'\t[{self.limitType}]'
+        limitType = re.sub('[A-Z][a-zA-Z]*', '', limitType) # `young, soon, load` rather than `youngCardLimit, ...`
+        return f'{utilization}% ({value} of {limit}){limitType}\t{self.deckName}'
+
+def limitUtilizationReportData() -> [UtilizationRow]:
     limits = mw.addonManager.getConfig(__name__)['limits']
     deckNames = {x.id: x.name for x in mw.col.decks.all_names_and_ids(include_filtered=False)}
     mapping = ruleMapping()
@@ -163,41 +289,30 @@ def limitUtilizationReport() -> str:
             limit = rule.get(limitConfigKey, float('inf'))
             value = deckIndentiferLimitFunc(deckIndentifer, rule)
             utilization = 100.0 * (value / max(limit, sys.float_info.epsilon))
-            rows.append([utilization, value, limit, deckName])
-        # by utilization, value, then limit
-        rows.sort(key=lambda x: x[2], reverse=False)
-        rows.sort(key=lambda x: x[1], reverse=True)
-        rows.sort(key=lambda x: x[0], reverse=True)
+            deckSize = len(list(mw.col.find_cards(f'deck:"{deckName}" -is:suspended')))
+            learned = len(list(mw.col.find_cards(f'deck:"{deckName}" (is:learn OR is:review) -is:suspended')))
 
-        ret = []
-        for utilization, value, limit, deckName in rows:
-            utilization = f'{min(9999.99, utilization):.2f}'
-            value = f'{value:.2f}' if isinstance(value, float) else value
-            limit = '∞' if limit == float('inf') else limit
-            limit = f'{limit:.2f}' if isinstance(limit, float) else limit
-            ret.append(f'{utilization}% ({value} of {limit})\t{deckName}')
-        return ret
+            row = UtilizationRow((-utilization, -value, limit, deckName), utilization, value, limit, 'Verbose', limitConfigKey, did, deckName, deckSize, learned)
+            rows.append(row)
+        return rows
 
-    lines = []
-    lines.append('=== Young Limit ===')
-    lines.append('')
-    lines.extend(utilizationForLimit('youngCardLimit', lambda deckIndentifer, rule: young(deckIndentifer['name'])))
+    ret = []
+    ret.extend(utilizationForLimit('youngCardLimit', lambda deckIndentifer, rule: young(deckIndentifer['name'])))
+    ret.extend(utilizationForLimit('loadLimit', lambda deckIndentifer, rule: dailyLoad(deckIndentifer['id'])))
+    ret.extend(utilizationForLimit('soonLimit', lambda deckIndentifer, rule: soon(deckIndentifer['name'], rule.get('soonDays', 7))))
+    ret.sort()
 
-    lines.append('')
-    lines.append('')
+    summary = {}
+    for row in ret:
+        l = summary.get(row.deckId, [])
+        row = dataclasses.replace(row)
+        row.detailLevel = 'Summary'
+        l.append(row)
+        summary[row.deckId] = l
+    summary = sorted([x[0] for x in summary.values()])
+    ret.extend(summary)
 
-    lines.append('=== Daily Load Limit ===')
-    lines.append('')
-    lines.extend(utilizationForLimit('loadLimit', lambda deckIndentifer, rule: dailyLoad(deckIndentifer['id'])))
-
-    lines.append('')
-    lines.append('')
-
-    lines.append('=== Soon Limit ===')
-    lines.append('')
-    lines.extend(utilizationForLimit('soonLimit', lambda deckIndentifer, rule: soon(deckIndentifer['name'], rule.get('soonDays', 7))))
-
-    return '\n'.join(lines)
+    return ret
 
 def execInBackground(func: Callable) -> Callable:
     return lambda: QueryOp(parent=mw, op=lambda col: func(), success=lambda *a, **k: None).run_in_background()
@@ -226,9 +341,9 @@ qconnect(recalculate.triggered, execInBackground(lambda: updateLimits(forceUpdat
 menu.addAction(recalculate)
 
 ruleMappingReportAction = qt.QAction("Show rule mapping report", menu)
-qconnect(ruleMappingReportAction.triggered, lambda: textDialog(ruleMappingReport()))
+qconnect(ruleMappingReportAction.triggered, lambda: textDialog(ruleMappingReport(), 'Rule Mapping Report'))
 menu.addAction(ruleMappingReportAction)
 
 limitUtilizationReportAction = qt.QAction("Show limit utilization report", menu)
-qconnect(limitUtilizationReportAction.triggered, lambda: textDialog(limitUtilizationReport()))
+qconnect(limitUtilizationReportAction.triggered, lambda: utilizationDialog())
 menu.addAction(limitUtilizationReportAction)

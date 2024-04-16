@@ -29,5 +29,16 @@
   "updateLimitsAfterSync": false,
   "updateLimitsOnInterval": false,
   "updateLimitsIntervalTimeInMinutes": 15,
-  "showNotifications": false
+  "showNotifications": false,
+  "rememberLastUiSettings": true,
+  "utilizationReport": {
+    "detailLevel": "Verbose",
+    "empty": true,
+    "noLimit": true,
+    "notStarted": true,
+    "complete": true,
+    "overLimit": true,
+    "underLimit": true,
+    "subDeck": true
+  }
 }
