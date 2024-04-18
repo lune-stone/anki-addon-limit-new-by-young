@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from aqt import mw, gui_hooks
 from aqt.utils import qconnect
 import aqt.qt as qt
