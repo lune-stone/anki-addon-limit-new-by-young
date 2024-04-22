@@ -182,7 +182,7 @@ def utilizationDialog() -> None:
         d = [x for x in d if checkboxes['noLimit'].isChecked() or not math.isinf(x.limit)]
         d = [x for x in d if checkboxes['notStarted'].isChecked() or x.learned > 0]
         d = [x for x in d if checkboxes['complete'].isChecked() or x.learned < x.deckSize]
-        d = [x for x in d if checkboxes['overLimit'].isChecked() or x.value <= x.limit]
+        d = [x for x in d if checkboxes['overLimit'].isChecked() or x.value < x.limit]
         d = [x for x in d if checkboxes['underLimit'].isChecked() or x.value >= x.limit]
         d = [x for x in d if checkboxes['subDeck'].isChecked() or not '::' in x.deckName]
 
