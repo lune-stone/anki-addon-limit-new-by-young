@@ -179,7 +179,7 @@ def utilizationDialog() -> None:
     def render():
         d = [x for x in data]
         d = [x for x in d if checkboxes['empty'].isChecked() or x.deckSize > 0]
-        d = [x for x in d if checkboxes['noLimit'].isChecked() or not math.isinf(x.limit)]
+        d = [x for x in d if checkboxes['noLimit'].isChecked() or x.deckHasLimits]
         d = [x for x in d if checkboxes['notStarted'].isChecked() or x.learned > 0]
         d = [x for x in d if checkboxes['complete'].isChecked() or x.learned < x.deckSize]
         d = [x for x in d if checkboxes['overLimit'].isChecked() or x.value < x.limit]
@@ -257,7 +257,8 @@ def ruleMappingReport() -> str:
 
 @dataclass(order=True)
 class UtilizationRow:
-    ordinal: (float, float, float)
+    displayOrdinal: (float, float, float)
+    summaryOrdinal: (float, int, float, float)
     utilization: float
     value: int | float
     limit: int | float
@@ -268,6 +269,7 @@ class UtilizationRow:
     deckName: str
     deckSize: int
     learned: int
+    deckHasLimits: bool
 
     def __str__(self):
         utilization = f'{min(9999.99, self.utilization):.2f}'
@@ -293,8 +295,11 @@ def limitUtilizationReportData() -> [UtilizationRow]:
             utilization = 100.0 * (value / max(limit, sys.float_info.epsilon))
             deckSize = len(list(mw.col.find_cards(f'deck:"{deckName}" -is:suspended')))
             learned = len(list(mw.col.find_cards(f'deck:"{deckName}" (is:learn OR is:review) -is:suspended')))
+            deckHasLimits = not math.isinf(limit)
+            reportOrdinal = (-utilization, -value, limit, deckName)
+            summaryOrdinal = (-utilization, 0 if deckHasLimits else 1, -value, limit, deckName) # prefer decks with defined limit should they all have 0 utilization
 
-            row = UtilizationRow((-utilization, -value, limit, deckName), utilization, value, limit, 'Verbose', limitConfigKey, did, deckName, deckSize, learned)
+            row = UtilizationRow(reportOrdinal, summaryOrdinal, utilization, value, limit, 'Verbose', limitConfigKey, did, deckName, deckSize, learned, deckHasLimits)
             rows.append(row)
         return rows
 
@@ -305,10 +310,11 @@ def limitUtilizationReportData() -> [UtilizationRow]:
     ret.sort()
 
     summary = {}
-    for row in ret:
+    for row in sorted(ret, key=lambda x: x.summaryOrdinal):
         l = summary.get(row.deckId, [])
         row = dataclasses.replace(row)
         row.detailLevel = 'Summary'
+        row.deckHasLimits = len([x for x in ret if x.deckId == row.deckId and x.deckHasLimits]) > 0
         l.append(row)
         summary[row.deckId] = l
     summary = sorted([x[0] for x in summary.values()])
