@@ -5,7 +5,7 @@ from aqt.utils import qconnect
 import aqt.qt as qt
 from anki.utils import ids2str
 from aqt.operations import QueryOp
-from aqt.utils import tooltip
+from aqt.utils import (openLink, tooltip)
 
 import dataclasses
 import math
@@ -355,3 +355,7 @@ menu.addAction(ruleMappingReportAction)
 limitUtilizationReportAction = qt.QAction("Show limit utilization report", menu)
 qconnect(limitUtilizationReportAction.triggered, lambda: utilizationDialog())
 menu.addAction(limitUtilizationReportAction)
+
+documentationAction = qt.QAction("Documentation", menu)
+qconnect(documentationAction.triggered, lambda: openLink('https://github.com/lune-stone/anki-addon-limit-new-by-young'))
+menu.addAction(documentationAction)
