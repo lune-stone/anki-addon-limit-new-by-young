@@ -18,7 +18,18 @@ Anki already includes settings that can limit both new and reviewed cards by the
 
 To install go to [ankiweb.net](https://ankiweb.net/shared/info/214963846) and follow the instructions in the `Download` section.
 
-After installing the add-on you will need to define a limit for one or more decks for the add-on to work. This is done by going to `Tools > Add-ons` selecting this add-on by name then clicking the `Config` button. Follow the instructions on the screen to set the limit value(s) and deck(s) you want. Lastly to apply the limits you can either use the config to enable automatic updates, or manually trigger an update by using `Tools > Limit New by Young > Recalculate today's new card limit for all decks` from the menu.
+After installing the add-on you will need to define a limit for one or more decks for the add-on to work. This is done by going to `Tools > Add-ons` selecting this add-on by name then clicking the `Config` button. Next edit the configuration json to add a limit. For example if you want to limit every decks to have at most 50 young cards you would edit the `"limits"` section to look like this:
+
+```
+"limits": [
+    {
+        "deckNames": ".*",
+        "youngCardLimit": 50
+    }
+],
+```
+
+For more customization of limits read through and follow the instructions on the right size of the screen. Lastly to apply the limits you can either use the configuration to enable automatic updates, or manually trigger an update by using `Tools > Limit New by Young > Recalculate today's new card limit for all decks` from the menu.
 
 To undo the limits you can either set the `New cards/day` limit under `Today only` or switch back to `Preset` found in the deck's options.
 
