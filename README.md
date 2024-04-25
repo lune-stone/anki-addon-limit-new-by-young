@@ -4,6 +4,16 @@ Limit New by Young is an add-on for [Anki](https://github.com/ankitects/anki) th
 
 Anki already includes settings that can limit both new and reviewed cards by the number of cards that are due for the day, but this kind of limit is not always ideal. If instead you place a limit on the total number of young cards, then you will be fed new cards at roughly the same rate that you learn them. This removes the need to do manually tuning to reach an optimal balance point.
 
+## Features
+
+* Limit new card by young cards in deck
+* Limit new card by estimated daily review load
+* Limit new card by cards that will be due soon
+* Different types of limits can be combined on a deck
+* Defined limits rules can apply to an individual deck or groups of decks
+* Options to automatically apply limits
+* UI tools to review limits and how close each deck is to it's limits
+
 ## Setup
 
 To install go to [ankiweb.net](https://ankiweb.net/shared/info/214963846) and follow the instructions in the `Download` section.
