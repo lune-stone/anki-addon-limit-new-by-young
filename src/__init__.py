@@ -359,3 +359,7 @@ menu.addAction(limitUtilizationReportAction)
 documentationAction = qt.QAction("Documentation", menu)
 qconnect(documentationAction.triggered, lambda: openLink('https://github.com/lune-stone/anki-addon-limit-new-by-young'))
 menu.addAction(documentationAction)
+
+reportBugAction = qt.QAction("Report a bug", menu)
+qconnect(reportBugAction.triggered, lambda: openLink('https://github.com/lune-stone/anki-addon-limit-new-by-young/issues'))
+menu.addAction(reportBugAction)
