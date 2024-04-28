@@ -184,7 +184,7 @@ def utilizationDialog() -> None:
         d = [x for x in d if checkboxes['complete'].isChecked() or x.learned < x.deckSize]
         d = [x for x in d if checkboxes['overLimit'].isChecked() or x.value < x.limit]
         d = [x for x in d if checkboxes['underLimit'].isChecked() or x.value >= x.limit]
-        d = [x for x in d if checkboxes['subDeck'].isChecked() or not '::' in x.deckName]
+        d = [x for x in d if checkboxes['subDeck'].isChecked() or '::' not in x.deckName]
 
         lines = []
 
@@ -311,12 +311,12 @@ def limitUtilizationReportData() -> [UtilizationRow]:
 
     summary = {}
     for row in sorted(ret, key=lambda x: x.summaryOrdinal):
-        l = summary.get(row.deckId, [])
+        deck_rows = summary.get(row.deckId, [])
         row = dataclasses.replace(row)
         row.detailLevel = 'Summary'
         row.deckHasLimits = len([x for x in ret if x.deckId == row.deckId and x.deckHasLimits]) > 0
-        l.append(row)
-        summary[row.deckId] = l
+        deck_rows.append(row)
+        summary[row.deckId] = deck_rows
     summary = sorted([x[0] for x in summary.values()])
     ret.extend(summary)
 
