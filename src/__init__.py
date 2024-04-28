@@ -1,12 +1,5 @@
 from __future__ import annotations
 
-from aqt import mw, gui_hooks
-from aqt.utils import qconnect
-import aqt.qt as qt
-from anki.utils import ids2str
-from aqt.operations import QueryOp
-from aqt.utils import (openLink, tooltip)
-
 import dataclasses
 import math
 import re
@@ -15,6 +8,12 @@ import threading
 import time
 from dataclasses import dataclass
 from typing import Callable, NewType
+
+import aqt.qt as qt
+from anki.utils import ids2str
+from aqt import gui_hooks, mw
+from aqt.operations import QueryOp
+from aqt.utils import openLink, qconnect, tooltip
 
 DeckId = NewType("DeckId", int)
 
