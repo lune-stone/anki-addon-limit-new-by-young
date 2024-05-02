@@ -7,7 +7,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
-from typing import Callable, NewType
+from typing import TYPE_CHECKING, Callable
 
 import aqt.qt as qt
 from anki.utils import ids2str
@@ -15,11 +15,12 @@ from aqt import gui_hooks, mw
 from aqt.operations import QueryOp
 from aqt.utils import openLink, qconnect, tooltip
 
-DeckId = NewType("DeckId", int)
+if TYPE_CHECKING:
+    from anki.decks import DeckId
 
 def rule_mapping() -> dict[DeckId, list[int]]:
     """returns the indices for matching rules where the first index is the one that determines the limits for the deck"""
-    ret = {}
+    ret: dict[DeckId, list[int]] = {}
 
     addon_config = mw.addonManager.getConfig(__name__)
     for deck_indentifer in mw.col.decks.all_names_and_ids(include_filtered=False):
@@ -32,7 +33,7 @@ def rule_mapping() -> dict[DeckId, list[int]]:
     return ret
 
 # copy the dailyLoad calculation from https://github.com/open-spaced-repetition/fsrs4anki-helper/blob/19581d42a957285a8d949aea0564f81296a62b81/stats.py#L25
-def daily_load(did: int) -> float:
+def daily_load(did: DeckId) -> float:
     '''Takes in a number deck id, returns the estimated load in reviews per day'''
     subdeck_id = ids2str(mw.col.decks.deck_and_child_ids(did))
     return mw.col.db.first(
@@ -53,7 +54,7 @@ def soon(deck_name: str, days: int) -> int:
     '''returns the number of cards about to be due excluding suspended'''
     return len(list(mw.col.find_cards(f'deck:"{deck_name}" prop:due<{days} -is:suspended')))
 
-def update_limits(hook_enabled_config_key=None, force_update=False) -> None:
+def update_limits(hook_enabled_config_key: str | None = None, force_update: bool = False) -> None:
     addon_config = mw.addonManager.getConfig(__name__)
     today = mw.col.sched.today
 
@@ -104,7 +105,7 @@ def update_limits(hook_enabled_config_key=None, force_update=False) -> None:
             limits_changed += 1
 
     if limits_changed > 0:
-        def reset_if_needed():
+        def reset_if_needed() -> None:
             if mw.state in ['deckBrowser', 'overview']:
                 mw.reset()
         mw.taskman.run_on_main(reset_if_needed)
@@ -159,7 +160,7 @@ def utilization_dialog() -> None:
     dialog.setGeometry(0, 0, 800, 800)
     dialog.setLayout(layout)
 
-    def save_config():
+    def save_config() -> None:
         config = mw.addonManager.getConfig(__name__)
         if not config.get('rememberLastUiSettings', True):
             return
@@ -175,7 +176,7 @@ def utilization_dialog() -> None:
             }
         mw.addonManager.writeConfig(__name__, config)
 
-    def render():
+    def render() -> None:
         d = [x for x in data]
         d = [x for x in d if check_boxes['empty'].isChecked() or x.deck_size > 0]
         d = [x for x in d if check_boxes['noLimit'].isChecked() or x.deck_has_limits]
@@ -256,8 +257,8 @@ def rule_mapping_report() -> str:
 
 @dataclass(order=True)
 class UtilizationRow:
-    display_ordinal: (float, float, float)
-    summary_ordinal: (float, int, float, float)
+    display_ordinal: tuple
+    summary_ordinal: tuple
     utilization: float
     value: int | float
     limit: int | float
@@ -270,7 +271,7 @@ class UtilizationRow:
     learned: int
     deck_has_limits: bool
 
-    def __str__(self):
+    def __str__(self: UtilizationRow) -> str:
         utilization = f'{min(9999.99, self.utilization):.2f}'
         value = f'{self.value:.2f}' if isinstance(self.value, float) else self.value
         limit = '∞' if self.limit == float('inf') else self.limit
@@ -279,12 +280,12 @@ class UtilizationRow:
         limit_type = re.sub('[A-Z][a-zA-Z]*', '', limit_type) # `young, soon, load` rather than `youngCardLimit, ...`
         return f'{utilization}% ({value} of {limit}){limit_type}\t{self.deck_name}'
 
-def limit_utilization_report_data() -> [UtilizationRow]:
+def limit_utilization_report_data() -> list[UtilizationRow]:
     limits = mw.addonManager.getConfig(__name__)['limits']
     deck_names = {x.id: x.name for x in mw.col.decks.all_names_and_ids(include_filtered=False)}
     mapping = rule_mapping()
 
-    def utilization_for_limit(limit_config_key, deck_indentifer_limit_func):
+    def utilization_for_limit(limit_config_key: str, deck_indentifer_limit_func: Callable) -> list[UtilizationRow]:
         rows = []
         for did, deck_name in sorted(deck_names.items(), key=lambda x: x[1]):
             deck_indentifer = {'id': did, 'name': deck_name}
@@ -308,7 +309,7 @@ def limit_utilization_report_data() -> [UtilizationRow]:
     ret.extend(utilization_for_limit('soonLimit', lambda deck_indentifer, rule: soon(deck_indentifer['name'], rule.get('soonDays', 7))))
     ret.sort()
 
-    summary = {}
+    summary: dict[int, list[UtilizationRow]] = {}
     for row in sorted(ret, key=lambda x: x.summary_ordinal):
         deck_rows = summary.get(row.deck_id, [])
         row = dataclasses.replace(row)
@@ -316,15 +317,14 @@ def limit_utilization_report_data() -> [UtilizationRow]:
         row.deck_has_limits = len([x for x in ret if x.deck_id == row.deck_id and x.deck_has_limits]) > 0
         deck_rows.append(row)
         summary[row.deck_id] = deck_rows
-    summary = sorted([x[0] for x in summary.values()])
-    ret.extend(summary)
+    ret.extend(sorted([x[0] for x in summary.values()]))
 
     return ret
 
 def exec_in_background(func: Callable) -> Callable:
     return lambda: QueryOp(parent=mw, op=lambda col: func(), success=lambda *a, **k: None).run_in_background()
 
-def update_limits_on_interval_loop():
+def update_limits_on_interval_loop() -> None:
     while mw.state == 'startup':
         time.sleep(60) # wait for config to be accessible
     while True:

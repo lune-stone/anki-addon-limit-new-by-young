@@ -3,3 +3,4 @@ all:
 
 check:
 	ruff check
+	#MYPYPATH=src mypy -m src
