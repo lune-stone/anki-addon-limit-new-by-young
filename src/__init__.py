@@ -7,23 +7,77 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable, Self, Sequence
 
+import aqt
 import aqt.qt as qt
 from anki.utils import ids2str
-from aqt import gui_hooks, mw
+from aqt import gui_hooks
 from aqt.operations import QueryOp
 from aqt.utils import openLink, qconnect, tooltip
 
 if TYPE_CHECKING:
-    from anki.decks import DeckId
+    from anki.collection import Collection
+    from anki.dbproxy import DBProxy
+    from anki.decks import DeckConfigDict, DeckDict, DeckId, DeckNameId
+    from aqt import AnkiQt
 
-def rule_mapping() -> dict[DeckId, list[int]]:
+class Anki:
+    def __init__(self: Self, module_name: str) -> None:
+        self._module_name = module_name
+
+    def _mw(self: Self) -> AnkiQt:
+        return aqt.mw # type: ignore[return-value]
+
+    def get_config(self: Self) -> dict[str, Any]:
+        return self._mw().addonManager.getConfig(self._module_name) or dict()
+
+    def write_config(self: Self, config: dict[str, Any]) -> None:
+        self._mw().addonManager.writeConfig(self._module_name, config)
+
+    def get_deck_identifiers(self: Self) -> Sequence[DeckNameId]:
+        return self._mw().col.decks.all_names_and_ids(include_filtered=False)
+
+    def get_subdeck_ids_csv(self: Self, deck_id: DeckId) -> str:
+        return ids2str(self._mw().col.decks.deck_and_child_ids(deck_id))
+
+    def get_deck_by_id(self: Self, deck_id: DeckId) -> DeckDict:
+        return self._mw().col.decks.get(deck_id) or dict()
+
+    def save_deck(self: Self, deck: DeckDict) -> None:
+        self._mw().col.decks.save(deck)
+
+    def config_dict_for_deck_id(self: Self, deck_id: DeckId) -> DeckConfigDict:
+        return self._mw().col.decks.config_dict_for_deck_id(deck_id)
+
+    def col(self: Self) -> Collection:
+        return self._mw().col
+
+    def db(self: Self) -> DBProxy:
+        return self._mw().col.db # type: ignore[return-value]
+
+    def run_on_main(self: Self, func: Callable) -> None:
+        return self._mw().taskman.run_on_main(func)
+
+    def is_ready(self: Self) -> bool:
+        return self._mw().state != 'startup'
+
+    def safe_reset(self: Self) -> None:
+        def reset_if_needed() -> None:
+            if self._mw().state in ['deckBrowser', 'overview']:
+                self._mw().reset()
+        self.run_on_main(reset_if_needed)
+
+    def tooltip(self: Self, msg: str) -> None:
+        self.run_on_main(lambda: tooltip(msg))
+
+
+def rule_mapping(anki: Anki) -> dict[DeckId, list[int]]:
     """returns the indices for matching rules where the first index is the one that determines the limits for the deck"""
     ret: dict[DeckId, list[int]] = {}
 
-    addon_config = mw.addonManager.getConfig(__name__)
-    for deck_indentifer in mw.col.decks.all_names_and_ids(include_filtered=False):
+    addon_config = anki.get_config()
+    for deck_indentifer in anki.get_deck_identifiers():
         ret[deck_indentifer.id] = []
         for idx, limits in enumerate(addon_config["limits"]):
                 if (isinstance(limits["deckNames"], str) and re.compile(limits["deckNames"]).match(deck_indentifer.name)) \
@@ -33,30 +87,29 @@ def rule_mapping() -> dict[DeckId, list[int]]:
     return ret
 
 # copy the dailyLoad calculation from https://github.com/open-spaced-repetition/fsrs4anki-helper/blob/19581d42a957285a8d949aea0564f81296a62b81/stats.py#L25
-def daily_load(did: DeckId) -> float:
+def daily_load(anki: Anki, did: DeckId) -> float:
     '''Takes in a number deck id, returns the estimated load in reviews per day'''
-    subdeck_id = ids2str(mw.col.decks.deck_and_child_ids(did))
-    return mw.col.db.first(
+    return (anki.db().first(
         f"""
     SELECT SUM(1.0 / max(1, ivl))
     FROM cards
     WHERE queue != -1 -- not suspended
-    AND did IN {subdeck_id}
+    AND did IN {anki.get_subdeck_ids_csv(did)}
     AND type != 0 -- not new
     """
-    )[0] or 0
+    ) or [0])[0] or 0
 
-def young(deck_name: str) -> int:
+def young(anki: Anki, deck_name: str) -> int:
     '''Takes in a number deck name prefix, returns the number of young cards excluding suspended'''
-    return len(list(mw.col.find_cards(f'deck:"{deck_name}" -is:new prop:ivl<21 -is:suspended')))
+    return len(list(anki.col().find_cards(f'deck:"{deck_name}" -is:new prop:ivl<21 -is:suspended')))
 
-def soon(deck_name: str, days: int) -> int:
+def soon(anki: Anki, deck_name: str, days: int) -> int:
     '''returns the number of cards about to be due excluding suspended'''
-    return len(list(mw.col.find_cards(f'deck:"{deck_name}" prop:due<{days} -is:suspended')))
+    return len(list(anki.col().find_cards(f'deck:"{deck_name}" prop:due<{days} -is:suspended')))
 
-def update_limits(hook_enabled_config_key: str | None = None, force_update: bool = False) -> None:
-    addon_config = mw.addonManager.getConfig(__name__)
-    today = mw.col.sched.today
+def update_limits(anki: Anki, hook_enabled_config_key: str | None = None, force_update: bool = False) -> None:
+    addon_config = anki.get_config()
+    today = anki.col().sched.today
 
     limits_changed = 0
 
@@ -64,53 +117,50 @@ def update_limits(hook_enabled_config_key: str | None = None, force_update: bool
         return
 
     if addon_config.get('showNotifications', False):
-        mw.taskman.run_on_main(lambda: tooltip('Updating limits...'))
+        anki.tooltip('Updating limits...')
 
-    mapping = rule_mapping()
+    mapping = rule_mapping(anki)
 
-    for deck_indentifer in mw.col.decks.all_names_and_ids():
+    for deck_indentifer in anki.get_deck_identifiers():
         matching_rules_idxs = mapping.get(deck_indentifer.id, [])
         if not matching_rules_idxs:
             continue
 
         addon_config_limits = addon_config["limits"][matching_rules_idxs[0]]
-        deck = mw.col.decks.get(deck_indentifer.id)
+        deck = anki.get_deck_by_id(deck_indentifer.id)
 
         limit_already_set = False if deck["newLimitToday"] is None else deck["newLimitToday"]["today"] == today
 
         if not force_update and limit_already_set:
             continue
 
-        deck_config = mw.col.decks.config_dict_for_deck_id(deck_indentifer.id)
-        deck_size = len(list(mw.col.find_cards(f'deck:"{deck_indentifer.name}" -is:suspended')))
-        new_today = 0 if mw.col.sched.today != deck['newToday'][0] else deck['newToday'][1]
+        deck_config = anki.config_dict_for_deck_id(deck_indentifer.id)
+        deck_size = len(list(anki.col().find_cards(f'deck:"{deck_indentifer.name}" -is:suspended')))
+        new_today = 0 if today != deck['newToday'][0] else deck['newToday'][1]
 
         young_card_limit = addon_config_limits.get('youngCardLimit', 999999999)
-        young_count = 0 if young_card_limit > deck_size else young(deck_indentifer.name)
+        young_count = 0 if young_card_limit > deck_size else young(anki, deck_indentifer.name)
 
         load_limit = addon_config_limits.get('loadLimit', 999999999)
-        load = 0.0 if load_limit > deck_size else daily_load(deck_indentifer.id)
+        load = 0.0 if load_limit > deck_size else daily_load(anki, deck_indentifer.id)
 
         soon_days = addon_config_limits.get('soonDays', 7)
         soon_limit = addon_config_limits.get('soonLimit', 999999999)
-        soon_count = 0 if soon_limit > deck_size else soon(deck_indentifer.name, soon_days)
+        soon_count = 0 if soon_limit > deck_size else soon(anki, deck_indentifer.name, soon_days)
 
         max_new_cards_per_day = deck_config['new']['perDay']
 
         new_limit = max(0, min(max_new_cards_per_day - new_today, young_card_limit - young_count, math.ceil(load_limit - load), soon_limit - soon_count) + new_today)
 
         if not(limit_already_set and deck["newLimitToday"]["limit"] == new_limit):
-            deck["newLimitToday"] = {"limit": new_limit, "today": mw.col.sched.today}
-            mw.col.decks.save(deck)
+            deck["newLimitToday"] = {"limit": new_limit, "today": today}
+            anki.save_deck(deck)
             limits_changed += 1
 
     if limits_changed > 0:
-        def reset_if_needed() -> None:
-            if mw.state in ['deckBrowser', 'overview']:
-                mw.reset()
-        mw.taskman.run_on_main(reset_if_needed)
+        anki.safe_reset()
     if addon_config.get('showNotifications', False):
-        mw.taskman.run_on_main(lambda: tooltip(f'Updated {limits_changed} limits.'))
+        anki.tooltip(f'Updated {limits_changed} limits.')
 
 def text_dialog(message: str, title: str) -> None:
     text_edit = qt.QPlainTextEdit(message)
@@ -120,15 +170,15 @@ def text_dialog(message: str, title: str) -> None:
     layout = qt.QVBoxLayout()
     layout.addWidget(text_edit)
 
-    dialog = qt.QDialog(mw)
+    dialog = qt.QDialog(aqt.mw)
     dialog.setWindowTitle(title)
     dialog.setGeometry(0, 0, 800, 800)
     dialog.setLayout(layout)
     dialog.show()
 
-def utilization_dialog() -> None:
-    data = limit_utilization_report_data()
-    ui_config = mw.addonManager.getConfig(__name__).get('utilizationReport', {})
+def utilization_dialog(anki: Anki) -> None:
+    data = limit_utilization_report_data(anki)
+    ui_config = anki.get_config().get('utilizationReport', {})
 
     text_edit = qt.QPlainTextEdit("")
     text_edit.setReadOnly(True)
@@ -155,13 +205,13 @@ def utilization_dialog() -> None:
     layout.addLayout(filters)
     layout.addWidget(text_edit)
 
-    dialog = qt.QDialog(mw)
+    dialog = qt.QDialog(aqt.mw)
     dialog.setWindowTitle('Limit Utilization Report')
     dialog.setGeometry(0, 0, 800, 800)
     dialog.setLayout(layout)
 
     def save_config() -> None:
-        config = mw.addonManager.getConfig(__name__)
+        config = anki.get_config()
         if not config.get('rememberLastUiSettings', True):
             return
         config['utilizationReport'] = {
@@ -174,7 +224,7 @@ def utilization_dialog() -> None:
                 "underLimit": check_boxes['underLimit'].isChecked(),
                 "subDeck": check_boxes['subDeck'].isChecked()
             }
-        mw.addonManager.writeConfig(__name__, config)
+        anki.write_config(config)
 
     def render() -> None:
         d = [x for x in data]
@@ -226,10 +276,10 @@ def utilization_dialog() -> None:
     render()
     dialog.show()
 
-def rule_mapping_report() -> str:
-    limits = mw.addonManager.getConfig(__name__)['limits']
-    deck_names = {x.id: x.name for x in mw.col.decks.all_names_and_ids(include_filtered=False)}
-    mapping = rule_mapping()
+def rule_mapping_report(anki: Anki) -> str:
+    limits = anki.get_config().get('limits', [])
+    deck_names = {x.id: x.name for x in anki.get_deck_identifiers()}
+    mapping = rule_mapping(anki)
 
     lines = []
     for idx, limit in enumerate(limits):
@@ -280,10 +330,10 @@ class UtilizationRow:
         limit_type = re.sub('[A-Z][a-zA-Z]*', '', limit_type) # `young, soon, load` rather than `youngCardLimit, ...`
         return f'{utilization}% ({value} of {limit}){limit_type}\t{self.deck_name}'
 
-def limit_utilization_report_data() -> list[UtilizationRow]:
-    limits = mw.addonManager.getConfig(__name__)['limits']
-    deck_names = {x.id: x.name for x in mw.col.decks.all_names_and_ids(include_filtered=False)}
-    mapping = rule_mapping()
+def limit_utilization_report_data(anki: Anki) -> list[UtilizationRow]:
+    limits = anki.get_config().get('limits', [])
+    deck_names = {x.id: x.name for x in anki.get_deck_identifiers()}
+    mapping = rule_mapping(anki)
 
     def utilization_for_limit(limit_config_key: str, deck_indentifer_limit_func: Callable) -> list[UtilizationRow]:
         rows = []
@@ -293,8 +343,8 @@ def limit_utilization_report_data() -> list[UtilizationRow]:
             limit = rule.get(limit_config_key, float('inf'))
             value = deck_indentifer_limit_func(deck_indentifer, rule)
             utilization = 100.0 * (value / max(limit, sys.float_info.epsilon))
-            deck_size = len(list(mw.col.find_cards(f'deck:"{deck_name}" -is:suspended')))
-            learned = len(list(mw.col.find_cards(f'deck:"{deck_name}" (is:learn OR is:review) -is:suspended')))
+            deck_size = len(list(anki.col().find_cards(f'deck:"{deck_name}" -is:suspended')))
+            learned = len(list(anki.col().find_cards(f'deck:"{deck_name}" (is:learn OR is:review) -is:suspended')))
             deck_has_limits = not math.isinf(limit)
             report_ordinal = (-utilization, -value, limit, deck_name)
             summary_ordinal = (-utilization, 0 if deck_has_limits else 1, -value, limit, deck_name) # prefer decks with defined limit should they all have 0 utilization
@@ -304,9 +354,9 @@ def limit_utilization_report_data() -> list[UtilizationRow]:
         return rows
 
     ret = []
-    ret.extend(utilization_for_limit('youngCardLimit', lambda deck_indentifer, rule: young(deck_indentifer['name'])))
-    ret.extend(utilization_for_limit('loadLimit', lambda deck_indentifer, rule: daily_load(deck_indentifer['id'])))
-    ret.extend(utilization_for_limit('soonLimit', lambda deck_indentifer, rule: soon(deck_indentifer['name'], rule.get('soonDays', 7))))
+    ret.extend(utilization_for_limit('youngCardLimit', lambda deck_indentifer, rule: young(anki, deck_indentifer['name'])))
+    ret.extend(utilization_for_limit('loadLimit', lambda deck_indentifer, rule: daily_load(anki, deck_indentifer['id'])))
+    ret.extend(utilization_for_limit('soonLimit', lambda deck_indentifer, rule: soon(anki, deck_indentifer['name'], rule.get('soonDays', 7))))
     ret.sort()
 
     summary: dict[int, list[UtilizationRow]] = {}
@@ -322,37 +372,39 @@ def limit_utilization_report_data() -> list[UtilizationRow]:
     return ret
 
 def exec_in_background(func: Callable) -> Callable:
-    return lambda: QueryOp(parent=mw, op=lambda col: func(), success=lambda *a, **k: None).run_in_background()
+    return lambda: QueryOp(parent=aqt.mw, op=lambda col: func(), success=lambda *a, **k: None).run_in_background() # type: ignore[arg-type]
 
-def update_limits_on_interval_loop() -> None:
-    while mw.state == 'startup':
+def update_limits_on_interval_loop(anki: Anki) -> None:
+    while not anki.is_ready():
         time.sleep(60) # wait for config to be accessible
     while True:
-        addon_config = mw.addonManager.getConfig(__name__)
+        addon_config = anki.get_config()
         sleep_interval = max(60, addon_config['updateLimitsIntervalTimeInMinutes'] * 60)
         time.sleep(sleep_interval)
 
-        update_limits(hook_enabled_config_key='updateLimitsOnInterval')
+        update_limits(anki, hook_enabled_config_key='updateLimitsOnInterval')
 
-update_limits_on_interval_thread = threading.Thread(target=update_limits_on_interval_loop, daemon=True)
+anki = Anki(__name__)
+
+update_limits_on_interval_thread = threading.Thread(target=lambda: update_limits_on_interval_loop(anki), daemon=True)
 update_limits_on_interval_thread.start()
 
-gui_hooks.main_window_did_init.append(exec_in_background(lambda: update_limits(hook_enabled_config_key='updateLimitsOnApplicationStartup')))
-gui_hooks.sync_did_finish.append(lambda: update_limits(hook_enabled_config_key='updateLimitsAfterSync'))
+gui_hooks.main_window_did_init.append(exec_in_background(lambda: update_limits(anki, hook_enabled_config_key='updateLimitsOnApplicationStartup')))
+gui_hooks.sync_did_finish.append(lambda: update_limits(anki, hook_enabled_config_key='updateLimitsAfterSync'))
 
-menu = qt.QMenu("Limit New by Young", mw)
-mw.form.menuTools.addMenu(menu)
+menu = qt.QMenu("Limit New by Young", aqt.mw)
+aqt.mw.form.menuTools.addMenu(menu) # type: ignore[union-attr]
 
 recalculate = qt.QAction("Recalculate today's new card limit for all decks", menu)
-qconnect(recalculate.triggered, exec_in_background(lambda: update_limits(force_update=True)))
+qconnect(recalculate.triggered, exec_in_background(lambda: update_limits(anki, force_update=True)))
 menu.addAction(recalculate)
 
 rule_mapping_report_action = qt.QAction("Show rule mapping report", menu)
-qconnect(rule_mapping_report_action.triggered, lambda: text_dialog(rule_mapping_report(), 'Rule Mapping Report'))
+qconnect(rule_mapping_report_action.triggered, lambda: text_dialog(rule_mapping_report(anki), 'Rule Mapping Report'))
 menu.addAction(rule_mapping_report_action)
 
 limit_utilization_report_action = qt.QAction("Show limit utilization report", menu)
-qconnect(limit_utilization_report_action.triggered, lambda: utilization_dialog())
+qconnect(limit_utilization_report_action.triggered, lambda: utilization_dialog(anki))
 menu.addAction(limit_utilization_report_action)
 
 documentation_action = qt.QAction("Documentation", menu)
