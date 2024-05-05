@@ -1,1 +1,2 @@
 *.ankiaddon
+*/__pycache__

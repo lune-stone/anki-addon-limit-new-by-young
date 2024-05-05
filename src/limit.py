@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from anki.decks import DeckId
 
-    from . import Anki
+    from .anki_api import AnkiApi as Anki
 
 
 def rule_mapping(anki: Anki) -> dict[DeckId, list[int]]:

@@ -11,7 +11,7 @@ import aqt
 import aqt.qt as qt
 
 if TYPE_CHECKING:
-    from . import Anki
+    from .anki_api import AnkiApi as Anki
 
 from .limit import daily_load, rule_mapping, soon, young
 
