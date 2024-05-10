@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Self, Sequence
+from typing import TYPE_CHECKING, Any, Callable, NewType, Sequence
+
+try:
+    from typing import Self
+except:
+    # support older versions of python
+    Self = NewType('Self', Any) # type: ignore[misc, valid-newtype, no-redef]
 
 import aqt
 from anki.utils import ids2str
