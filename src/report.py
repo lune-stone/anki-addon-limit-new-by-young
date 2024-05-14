@@ -24,10 +24,14 @@ def text_dialog(message: str, title: str) -> None:
     layout = qt.QVBoxLayout()
     layout.addWidget(text_edit)
 
-    dialog = qt.QDialog(aqt.mw)
+    dialog = qt.QMainWindow(aqt.mw)
     dialog.setWindowTitle(title)
     dialog.setGeometry(0, 0, 800, 800)
-    dialog.setLayout(layout)
+
+    widget = qt.QWidget(dialog)
+    widget.setLayout(layout)
+    dialog.setCentralWidget(widget)
+
     dialog.show()
 
 def utilization_dialog(anki: Anki) -> None:
@@ -59,10 +63,13 @@ def utilization_dialog(anki: Anki) -> None:
     layout.addLayout(filters)
     layout.addWidget(text_edit)
 
-    dialog = qt.QDialog(aqt.mw)
+    dialog = qt.QMainWindow(aqt.mw)
     dialog.setWindowTitle('Limit Utilization Report')
     dialog.setGeometry(0, 0, 800, 800)
-    dialog.setLayout(layout)
+
+    widget = qt.QWidget(dialog)
+    widget.setLayout(layout)
+    dialog.setCentralWidget(widget)
 
     def save_config() -> None:
         config = anki.get_config()
