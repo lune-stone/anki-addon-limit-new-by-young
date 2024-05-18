@@ -34,6 +34,10 @@ If you do not wish to limit new cards by the number of cards due soon, but plan 
 
 A positive integer that represents how many days to include when calculating cards that are due soon for `soonLimit`. Default value is `7` if not defined in the config json. This value has no effect if `soonLimit` is not defined.
 
+### `.limits.[].minimum`
+
+A positive integer that represents the lower bound value to limit new cards. Default value is `0` if not defined in the config json. 
+
 ### `.updateLimitsOnApplicationStartup`
 
 When using `true` the add-on will automatically update the new card limit when Anki is launched. If today's limit has already been set then the limit will not be updated a second time. If you are using sync between multiple devices then it is recommend to use `updateLimitsAfterSync` instead.

@@ -86,9 +86,12 @@ def update_limits(anki: Anki, hook_enabled_config_key: str | None = None, force_
         soon_limit = addon_config_limits.get('soonLimit', 999999999)
         soon_count = 0 if soon_limit > deck_size else soon(anki, deck_indentifer.name, soon_days)
 
+        minimum = addon_config_limits.get('minimum', 0)
+
         max_new_cards_per_day = deck_config['new']['perDay']
 
-        new_limit = max(0, min(max_new_cards_per_day - new_today, young_card_limit - young_count, math.ceil(load_limit - load), soon_limit - soon_count) + new_today)
+        effective_config_limit = max(minimum, min(young_card_limit - young_count, math.ceil(load_limit - load), soon_limit - soon_count))
+        new_limit = max(0, min(max_new_cards_per_day - new_today, effective_config_limit) + new_today)
 
         if not(limit_already_set and deck["newLimitToday"]["limit"] == new_limit):
             deck["newLimitToday"] = {"limit": new_limit, "today": today}

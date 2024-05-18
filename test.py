@@ -16,7 +16,7 @@ from typing import Any, Self
 from src.limit import update_limits
 from src.report import limit_utilization_report_data
 
-def create_mock_limit(deck_names: list[str], young: int | None = None, load: float | None = None, soon: int | None = None, soon_days: int | None = None) -> dict[str, Any]:
+def create_mock_limit(deck_names: list[str], young: int | None = None, load: float | None = None, soon: int | None = None, soon_days: int | None = None, minimum: int | None = None) -> dict[str, Any]:
     ret = {'deckNames': deck_names}
     if young:
         ret['youngCardLimit'] = young
@@ -26,6 +26,8 @@ def create_mock_limit(deck_names: list[str], young: int | None = None, load: flo
         ret['soonLimit'] = soon
     if soon_days:
         ret['soonDays'] = soon_days
+    if minimum:
+        ret['minimum'] = minimum
     return ret
 
 def create_mock_deck(id: int, name: str, cards: int, young: int, load: float, soon: int, new: int, new_limit: int, max_new: int) -> dict[str, Any]:
@@ -146,6 +148,18 @@ class Test(unittest.TestCase):
         data = limit_utilization_report_data(anki)
         summary = [x for x in data if x.detail_level == 'Summary'][0]
         self.assertEqual('youngCardLimit', summary.limit_type, 'should not pick an undefined limit type, even if the value is higher')
+
+    def test_minimum_limit(self: Self) -> None:
+        deck = create_mock_deck(id=1, name='A', cards=1000, young=5, load=10.2, soon=0, new=0, new_limit=None, max_new=10)
+        limit = create_mock_limit(deck_names=['A'], young=6, minimum=2)
+        anki = create_mock_anki([limit], [deck])
+        update_limits(anki, force_update=True)
+        self.assertEqual(2, deck['newLimitToday']['limit'], 'max(young_card_limit - young_count, minimum) = max(6 - 5, 2) = 2')
+        
+        deck = create_mock_deck(id=1, name='A', cards=1000, young=0, load=10.2, soon=0, new=0, new_limit=None, max_new=10)
+        anki = create_mock_anki([limit], [deck])
+        update_limits(anki, force_update=True)
+        self.assertEqual(6, deck['newLimitToday']['limit'], 'max(young_card_limit - young_count, minimum) = max(6 - 0, 2) = 6')
 
 
 if __name__ == '__main__':

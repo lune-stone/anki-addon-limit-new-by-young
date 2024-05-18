@@ -22,7 +22,9 @@
     },
     {
       "deckNames": "lorem ipsum [0-9]+",
-      "youngCardLimit": 50
+      "youngCardLimit": 50,
+      "loadLimit": 10.0,
+      "minimum": 2
     }
   ],
   "updateLimitsOnApplicationStartup": false,
