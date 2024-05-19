@@ -32,6 +32,11 @@ def text_dialog(message: str, title: str) -> None:
     widget.setLayout(layout)
     dialog.setCentralWidget(widget)
 
+    def on_key_press(e: qt.PyQt6.QtGui.QKeyEvent) -> None:
+        if e.key() == qt.PyQt6.QtCore.Qt.Key.Key_Escape:
+            dialog.close()
+    dialog.keyPressEvent = on_key_press #type: ignore[assignment, method-assign]
+
     dialog.show()
 
 def utilization_dialog(anki: Anki) -> None:
@@ -135,6 +140,12 @@ def utilization_dialog(anki: Anki) -> None:
     detail_level.activated.connect(save_config)
 
     render()
+
+    def on_key_press(e: qt.PyQt6.QtGui.QKeyEvent) -> None:
+        if e.key() == qt.PyQt6.QtCore.Qt.Key.Key_Escape:
+            dialog.close()
+    dialog.keyPressEvent = on_key_press #type: ignore[assignment, method-assign]
+
     dialog.show()
 
 def rule_mapping_report(anki: Anki) -> str:
