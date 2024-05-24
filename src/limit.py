@@ -90,8 +90,8 @@ def update_limits(anki: Anki, hook_enabled_config_key: str | None = None, force_
 
         max_new_cards_per_day = deck_config['new']['perDay']
 
-        effective_config_limit = max(minimum, min(young_card_limit - young_count, math.ceil(load_limit - load), soon_limit - soon_count))
-        new_limit = max(0, min(max_new_cards_per_day - new_today, effective_config_limit) + new_today)
+        effective_config_limit = min(young_card_limit - young_count, math.ceil(load_limit - load), soon_limit - soon_count)
+        new_limit = max(0, minimum - new_today, min(max_new_cards_per_day - new_today, effective_config_limit) + new_today)
 
         if not(limit_already_set and deck["newLimitToday"]["limit"] == new_limit):
             deck["newLimitToday"] = {"limit": new_limit, "today": today}

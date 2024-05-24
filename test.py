@@ -160,6 +160,12 @@ class Test(unittest.TestCase):
         anki = create_mock_anki([limit], [deck])
         update_limits(anki, force_update=True)
         self.assertEqual(6, deck['newLimitToday']['limit'], 'max(young_card_limit - young_count, minimum) = max(6 - 0, 2) = 6')
+        
+        deck = create_mock_deck(id=1, name='A', cards=1000, young=7, load=10.2, soon=0, new=1, new_limit=1, max_new=10)
+        limit = create_mock_limit(deck_names=['A'], young=6, minimum=1)
+        anki = create_mock_anki([limit], [deck])
+        update_limits(anki, force_update=True)
+        self.assertEqual(0, deck['newLimitToday']['limit'], 'minimum only counts before reviews')
 
 
 if __name__ == '__main__':
