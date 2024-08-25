@@ -30,8 +30,8 @@ def create_mock_limit(deck_names: list[str], young: int | None = None, load: flo
         ret['minimum'] = minimum
     return ret
 
-def create_mock_deck(id: int, name: str, cards: int, young: int, load: float, soon: int, new: int, new_limit: int, max_new: int) -> dict[str, Any]:
-    return {'id': id, 'name': name, 'cards': cards, 'young': young, 'load': load, 'soon': soon, 'newToday': [0, 0] if not new else [0, new], 'newLimitToday': None if not new_limit else {'today': 0, 'limit': new_limit}, 'new': {'perDay': max_new }}
+def create_mock_deck(id: int, name: str, cards: int, young: int, load: float, soon: int, new: int, new_limit: int, max_new: int, deck_max_new: int | None = None) -> dict[str, Any]:
+    return {'id': id, 'name': name, 'cards': cards, 'young': young, 'load': load, 'soon': soon, 'newToday': [0, 0] if not new else [0, new], 'newLimitToday': None if not new_limit else {'today': 0, 'limit': new_limit}, 'new': {'perDay': max_new }, 'newLimit': deck_max_new}
 
 def create_mock_anki(limits, decks):
     class MockAnki:
@@ -166,6 +166,14 @@ class Test(unittest.TestCase):
         anki = create_mock_anki([limit], [deck])
         update_limits(anki, force_update=True)
         self.assertEqual(0, deck['newLimitToday']['limit'], 'minimum only counts before reviews')
+
+    def test_this_deck_config(self: Self) -> None:
+        deck = create_mock_deck(id=1, name='A', cards=1000, young=0, load=None, soon=None, new=None, new_limit=None, max_new=0, deck_max_new=5)
+        limit = create_mock_limit(deck_names=['A'], young=10)
+        anki = create_mock_anki([limit], [deck])
+        update_limits(anki, force_update=True)
+        self.assertEqual(5, deck['newLimitToday']['limit'], 'max new should match "this deck" over "preset" when defined')
+
 
 
 if __name__ == '__main__':
