@@ -94,7 +94,7 @@ def update_limits(anki: Anki, hook_enabled_config_key: str | None = None, force_
         new_limit = max(0, minimum - new_today, min(max_new_cards_per_day - new_today, effective_config_limit) + new_today)
 
         if not(limit_already_set and deck["newLimitToday"]["limit"] == new_limit):
-            deck["newLimitToday"] = {"limit": new_limit, "today": today}
+            deck["newLimitToday"] = {"limit": round(new_limit), "today": today}
             anki.save_deck(deck)
             limits_changed += 1
 
