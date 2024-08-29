@@ -174,6 +174,16 @@ class Test(unittest.TestCase):
         update_limits(anki, force_update=True)
         self.assertEqual(5, deck['newLimitToday']['limit'], 'max new should match "this deck" over "preset" when defined')
 
+    def test_floating_point_limits_persisted_as_integers(self: Self) -> None:
+        soon_limit = create_mock_deck(id=1, name='A', cards=1000, young=0, load=0.0, soon=100, new=None, new_limit=None, max_new=10)
+        young_limit = create_mock_deck(id=2, name='B', cards=1000, young=100, load=0.0, soon=0, new=None, new_limit=None, max_new=10)
+        limit = create_mock_limit(deck_names=['A', 'B'], young=105.2, soon=105.2)
+        anki = create_mock_anki([limit], [soon_limit, young_limit])
+
+        update_limits(anki, force_update=True)
+
+        self.assertEqual(5, soon_limit['newLimitToday']['limit'], 'soon_limit: 105.2 - 100 == 5 (not 5.2)')
+        self.assertEqual(5, young_limit['newLimitToday']['limit'], 'young_limit: 105.2 - 100 == 5 (not 5.2)')
 
 
 if __name__ == '__main__':
