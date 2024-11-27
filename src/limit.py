@@ -69,7 +69,7 @@ def update_limits(anki: Anki, hook_enabled_config_key: str | None = None, force_
 
         limit_already_set = False if deck["newLimitToday"] is None else deck["newLimitToday"]["today"] == today
 
-        if not force_update and limit_already_set:
+        if not (force_update or addon_config.get('recalculateLimitIfAlreadySet', False)) and limit_already_set:
             continue
 
         deck_config = anki.config_dict_for_deck_id(deck_indentifer.id)

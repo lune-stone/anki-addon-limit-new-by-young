@@ -54,6 +54,10 @@ When using `true` the add-on will automatically update the new card limit even t
 
 When `updateLimitsOnInterval` is set to true, the time in minutes in between updating the new card limit. If `updateLimitsOnInterval` is false, this setting has no effect.
 
+### `.recalculateLimitIfAlreadySet`
+
+When `recalculateLimitIfAlreadySet` is set to `false`, events that would automatic apply limits will only set the today's limit if it has not yet been set for the day (even if switched back to using the preset or deck limit instead). When true, even if the limit has already been set for the day, it will be recalculated and if there is a difference, then the limit is updated to the new value. Using the UI to manually update the limit ignores this setting, and will always recalculate and update the limit. If omitted, `false` is used by default.
+
 ### `.showNotifications`
 
 When `showNotifications` is set to true, a notification will be shown at the start and end of the process each time limits are updated.
