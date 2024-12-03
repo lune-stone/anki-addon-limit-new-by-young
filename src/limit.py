@@ -51,7 +51,7 @@ def update_limits(anki: Anki, hook_enabled_config_key: str | None = None, force_
 
     limits_changed = 0
 
-    if hook_enabled_config_key and not addon_config[hook_enabled_config_key]:
+    if hook_enabled_config_key and not addon_config.get(hook_enabled_config_key, False):
         return
 
     if addon_config.get('showNotifications', False):
