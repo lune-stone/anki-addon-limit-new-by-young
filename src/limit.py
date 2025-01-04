@@ -37,13 +37,26 @@ def daily_load(anki: Anki, did: DeckId) -> float:
     """
     ) or [0])[0] or 0
 
-def young(anki: Anki, deck_name: str) -> int:
-    '''Takes in a number deck name prefix, returns the number of young cards excluding suspended'''
-    return len(list(anki.col().find_cards(f'deck:"{deck_name}" -is:new prop:ivl<21 -is:suspended')))
+def young(anki: Anki, deck_id: DeckId) -> int:
+    '''returns the number of young cards excluding suspended'''
+    did = re.sub('[()]', '', anki.get_subdeck_ids_csv(deck_id))
+    return len(list(anki.col().find_cards(f'-is:new prop:ivl<21 -is:suspended did:{did}')))
 
-def soon(anki: Anki, deck_name: str, days: int) -> int:
+def soon(anki: Anki, deck_id: DeckId, days: int) -> int:
     '''returns the number of cards about to be due excluding suspended'''
-    return len(list(anki.col().find_cards(f'deck:"{deck_name}" prop:due<{days} -is:suspended')))
+    did = re.sub('[()]', '', anki.get_subdeck_ids_csv(deck_id))
+    return len(list(anki.col().find_cards(f'prop:due<{days} -is:suspended did:{did}')))
+
+def cards(anki: Anki, deck_id: DeckId) -> int:
+    '''returns the number of cards in the deck or it's subdecks'''
+    did = re.sub('[()]', '', anki.get_subdeck_ids_csv(deck_id))
+    return len(list(anki.col().find_cards(f'-is:suspended did:{did}')))
+
+def seen(anki: Anki, deck_id: DeckId) -> int:
+    '''returns the number of seen cards in the deck or it's subdecks'''
+    did = re.sub('[()]', '', anki.get_subdeck_ids_csv(deck_id))
+    return len(list(anki.col().find_cards(f'(is:learn OR is:review) -is:suspended did:{did}')))
+
 
 def update_limits(anki: Anki, hook_enabled_config_key: str | None = None, force_update: bool = False) -> None:
     addon_config = anki.get_config()
@@ -73,18 +86,18 @@ def update_limits(anki: Anki, hook_enabled_config_key: str | None = None, force_
             continue
 
         deck_config = anki.config_dict_for_deck_id(deck_indentifer.id)
-        deck_size = len(list(anki.col().find_cards(f'deck:"{deck_indentifer.name}" -is:suspended')))
+        deck_size = cards(anki, deck_indentifer.id)
         new_today = 0 if today != deck['newToday'][0] else deck['newToday'][1]
 
         young_card_limit = addon_config_limits.get('youngCardLimit', 999999999)
-        young_count = 0 if young_card_limit > deck_size else young(anki, deck_indentifer.name)
+        young_count = 0 if young_card_limit > deck_size else young(anki, deck_indentifer.id)
 
         load_limit = addon_config_limits.get('loadLimit', 999999999)
         load = 0.0 if load_limit > deck_size else daily_load(anki, deck_indentifer.id)
 
         soon_days = addon_config_limits.get('soonDays', 7)
         soon_limit = addon_config_limits.get('soonLimit', 999999999)
-        soon_count = 0 if soon_limit > deck_size else soon(anki, deck_indentifer.name, soon_days)
+        soon_count = 0 if soon_limit > deck_size else soon(anki, deck_indentifer.id, soon_days)
 
         minimum = addon_config_limits.get('minimum', 0)
 

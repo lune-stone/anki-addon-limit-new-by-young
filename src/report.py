@@ -13,7 +13,7 @@ import aqt.qt as qt
 if TYPE_CHECKING:
     from .anki_api import AnkiApi as Anki
 
-from .limit import daily_load, rule_mapping, soon, young
+from .limit import cards, daily_load, rule_mapping, seen, soon, young
 
 
 def text_dialog(message: str, title: str) -> None:
@@ -215,8 +215,8 @@ def limit_utilization_report_data(anki: Anki) -> list[UtilizationRow]:
             limit = rule.get(limit_config_key, float('inf'))
             value = deck_indentifer_limit_func(deck_indentifer, rule)
             utilization = 100.0 * (value / max(limit, sys.float_info.epsilon))
-            deck_size = len(list(anki.col().find_cards(f'deck:"{deck_name}" -is:suspended')))
-            learned = len(list(anki.col().find_cards(f'deck:"{deck_name}" (is:learn OR is:review) -is:suspended')))
+            deck_size = cards(anki, did)
+            learned = seen(anki, did)
             deck_has_limits = not math.isinf(limit)
             report_ordinal = (-utilization, -value, limit, deck_name)
             summary_ordinal = (-utilization, 0 if deck_has_limits else 1, -value, limit, deck_name) # prefer decks with defined limit should they all have 0 utilization
@@ -226,9 +226,9 @@ def limit_utilization_report_data(anki: Anki) -> list[UtilizationRow]:
         return rows
 
     ret = []
-    ret.extend(utilization_for_limit('youngCardLimit', lambda deck_indentifer, rule: young(anki, deck_indentifer['name'])))
+    ret.extend(utilization_for_limit('youngCardLimit', lambda deck_indentifer, rule: young(anki, deck_indentifer['id'])))
     ret.extend(utilization_for_limit('loadLimit', lambda deck_indentifer, rule: daily_load(anki, deck_indentifer['id'])))
-    ret.extend(utilization_for_limit('soonLimit', lambda deck_indentifer, rule: soon(anki, deck_indentifer['name'], rule.get('soonDays', 7))))
+    ret.extend(utilization_for_limit('soonLimit', lambda deck_indentifer, rule: soon(anki, deck_indentifer['id'], rule.get('soonDays', 7))))
     ret.sort()
 
     summary: dict[int, list[UtilizationRow]] = {}

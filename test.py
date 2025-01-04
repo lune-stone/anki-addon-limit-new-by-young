@@ -59,8 +59,8 @@ def create_mock_anki(limits, decks):
 
         def col(self):
             def f(search):
-                deck_name = re.sub('.*deck:"([^"]*)".*', '\\1', search)
-                deck = [x for x in decks if x['name'] == deck_name][0]
+                deck_id = int(re.sub('.*did:([0-9]*).*', '\\1', search))
+                deck = [x for x in decks if x['id'] == deck_id][0]
                 if 'prop:ivl<21' in search:
                     return list(range(deck['young']))
                 if 'prop:due<' in search:
