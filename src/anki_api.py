@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, NewType, Sequence
+from typing import TYPE_CHECKING, Any, Callable, NewType
 
 try:
     from typing import Self
@@ -13,11 +13,12 @@ from anki.utils import ids2str
 from aqt.utils import tooltip
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from anki.collection import Collection
     from anki.dbproxy import DBProxy
     from anki.decks import DeckConfigDict, DeckDict, DeckId, DeckNameId
     from aqt import AnkiQt
-
 
 
 class AnkiApi:
