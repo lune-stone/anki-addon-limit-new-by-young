@@ -32,8 +32,8 @@ def text_dialog(message: str, title: str) -> None:
     widget.setLayout(layout)
     dialog.setCentralWidget(widget)
 
-    def on_key_press(e: qt.PyQt6.QtGui.QKeyEvent) -> None:
-        if e.key() == qt.PyQt6.QtCore.Qt.Key.Key_Escape:
+    def on_key_press(e: qt.QKeyEvent) -> None:
+        if e.key() == qt.Qt.Key.Key_Escape:
             dialog.close()
     dialog.keyPressEvent = on_key_press #type: ignore[assignment, method-assign]
 
@@ -141,8 +141,8 @@ def utilization_dialog(anki: Anki) -> None:
 
     render()
 
-    def on_key_press(e: qt.PyQt6.QtGui.QKeyEvent) -> None:
-        if e.key() == qt.PyQt6.QtCore.Qt.Key.Key_Escape:
+    def on_key_press(e: qt.QKeyEvent) -> None:
+        if e.key() == qt.Qt.Key.Key_Escape:
             dialog.close()
     dialog.keyPressEvent = on_key_press #type: ignore[assignment, method-assign]
 
