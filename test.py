@@ -133,6 +133,18 @@ class Test(unittest.TestCase):
         # new cards, meaning that the value we pick as the day's limit before the adjustments needs to be
         # reduced to have the effective limit reach the original target.
         self.assertEqual(1, deck['newLimitToday']['limit'], 'young_card_limit - young_count + new = 5 - 3 - 1 = 1')
+    
+    def test_deck_has_large_custom_study(self: Self) -> None:
+        deck = create_mock_deck(id=1, name='A', cards=1000, young=3, load=None, soon=None, new=-5, new_limit=None, max_new=10)
+        limit = create_mock_limit(deck_names=['A'], young=5)
+        anki = create_mock_anki([limit], [deck])
+
+        update_limits(anki, force_update=True)
+
+        # Anki will adjusts new to handle custom study which then is considered while applying the limits on
+        # new cards, meaning that the value we pick as the day's limit before the adjustments needs to be
+        # reduced to have the effective limit reach the original target.
+        self.assertEqual(-3, deck['newLimitToday']['limit'], 'young_card_limit - young_count + new = 5 - 3 - 5 = -3')
 
     def test_report_summary(self: Self) -> None:
         deck = create_mock_deck(id=1, name='A', cards=1000, young=3, load=10.2, soon=4, new=0, new_limit=None, max_new=10)
