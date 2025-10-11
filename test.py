@@ -3,6 +3,7 @@
 import os
 import sys
 
+from PyQt6.QtWebEngineWidgets import *
 from PyQt6.QtWidgets import QApplication
 
 os.environ["TEST"] = "True"
