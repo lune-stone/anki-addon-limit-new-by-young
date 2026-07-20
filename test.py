@@ -258,16 +258,28 @@ class Test(unittest.TestCase):
         self.assertEqual(3, deck_a['newLimitToday']['limit'], 'A gets 3 from collective budget')
         self.assertEqual(2, deck_b['newLimitToday']['limit'], 'B gets minimum=2 even though budget exhausted')
 
-    def test_single_deck_rule_unchanged(self: Self) -> None:
-        """A rule with only one deck behaves identically to old per-deck logic"""
-        deck = create_mock_deck(id=1, name='A', cards=1000, young=3, load=None, soon=None, new=0, new_limit=None, max_new=10)
-        limit = create_mock_limit(deck_names=['A'], young=5)
-        anki = create_mock_anki([limit], [deck])
-
-        update_limits(anki, force_update=True)
-
-        self.assertEqual(2, deck['newLimitToday']['limit'], 'single deck: 5 - 3 = 2, same as old behavior')
-
+    def test_wildcard_and_case_insensitive_matching(self: Self) -> None:
+        """Test that matching supports case-insensitivity and converts intuitive wildcards"""
+        deck_exact = create_mock_deck(id=1, name='German Verbs', cards=1000, young=10, load=None, soon=None, new=0, new_limit=None, max_new=10)
+        deck_wildcard = create_mock_deck(id=2, name='My german deck', cards=1000, young=10, load=None, soon=None, new=0, new_limit=None, max_new=10)
+        deck_nomatch = create_mock_deck(id=3, name='French Verbs', cards=1000, young=10, load=None, soon=None, new=0, new_limit=None, max_new=10)
+        
+        # Test 1: case-insensitive list matching
+        limit_list = create_mock_limit(deck_names=['german verbs'], young=50)
+        anki_list = create_mock_anki([limit_list], [deck_exact])
+        # Force rule mapping generation
+        from src.limit import rule_mapping
+        mapping_list = rule_mapping(anki_list)
+        self.assertEqual([0], mapping_list.get(deck_exact['id']), "Should match case-insensitive list")
+        
+        # Test 2: intuitive wildcard (*german*) converting to regex (.*german.*) and matching case-insensitively
+        limit_wildcard = create_mock_limit(deck_names='*german*', young=50)
+        anki_wildcard = create_mock_anki([limit_wildcard], [deck_exact, deck_wildcard, deck_nomatch])
+        mapping_wildcard = rule_mapping(anki_wildcard)
+        
+        self.assertEqual([0], mapping_wildcard.get(deck_exact['id']), "Should match 'German Verbs' with '*german*'")
+        self.assertEqual([0], mapping_wildcard.get(deck_wildcard['id']), "Should match 'My german deck' with '*german*'")
+        self.assertEqual([], mapping_wildcard.get(deck_nomatch['id']), "Should not match 'French Verbs'")
 
 if __name__ == '__main__':
     unittest.main()

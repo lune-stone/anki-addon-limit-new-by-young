@@ -15,36 +15,34 @@ def rule_mapping(anki: Anki) -> dict[DeckId, list[int]]:
     ret: dict[DeckId, list[int]] = {}
 
     addon_config = anki.get_config()
-    for deck_indentifer in anki.get_deck_identifiers():
-        ret[deck_indentifer.id] = []
-        for idx, limits in enumerate(addon_config["limits"]):
-            deck_names_rule = limits["deckNames"]
-            
-            matched = False
-            if isinstance(deck_names_rule, str):
-                pattern = deck_names_rule
-                # Convert simple glob wildcards to regex for convenience
-                if pattern.startswith('*'):
-                    pattern = '.' + pattern
-                if pattern.endswith('*') and not pattern.endswith('.*'):
-                    pattern = pattern[:-1] + '.*'
-                
+    
+    # Pre-process rules for performance and to handle intuitive wildcards
+    rules = []
+    for limits in addon_config.get("limits", []):
+        names = limits.get("deckNames")
+        if isinstance(names, str):
+            try:
+                regex = re.compile(names, re.IGNORECASE)
+            except re.error:
+                # Fallback: if user types intuitive wildcard like "*german*", convert to valid regex ".*german.*"
+                fallback_pattern = names.replace('*', '.*')
                 try:
-                    regex = re.compile(pattern, re.IGNORECASE)
+                    regex = re.compile(fallback_pattern, re.IGNORECASE)
                 except re.error:
-                    # Fallback to literal match if regex is completely invalid
-                    regex = re.compile(re.escape(deck_names_rule), re.IGNORECASE)
-                    
-                if regex.match(deck_indentifer.name):
-                    matched = True
-            elif isinstance(deck_names_rule, list):
-                # Case-insensitive comparison for lists
-                deck_name_lower = deck_indentifer.name.lower()
-                if any(deck_name_lower == str(name).lower() for name in deck_names_rule):
-                    matched = True
-                    
-            if matched:
-                ret[deck_indentifer.id].append(idx)
+                    regex = None
+            rules.append(('regex', regex))
+        elif isinstance(names, list):
+            rules.append(('list', [n.lower() for n in names]))
+        else:
+            rules.append(('none', None))
+
+    for deck_ident in anki.get_deck_identifiers():
+        ret[deck_ident.id] = []
+        for idx, (rule_type, rule_val) in enumerate(rules):
+            if rule_type == 'regex' and rule_val and rule_val.match(deck_ident.name):
+                ret[deck_ident.id].append(idx)
+            elif rule_type == 'list' and deck_ident.name.lower() in rule_val:
+                ret[deck_ident.id].append(idx)
 
     return ret
 
