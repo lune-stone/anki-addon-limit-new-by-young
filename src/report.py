@@ -207,28 +207,51 @@ def limit_utilization_report_data(anki: Anki) -> list[UtilizationRow]:
     deck_names = {x.id: x.name for x in anki.get_deck_identifiers()}
     mapping = rule_mapping(anki)
 
-    def utilization_for_limit(limit_config_key: str, deck_indentifer_limit_func: Callable) -> list[UtilizationRow]:
+    # Group decks by their first-matching rule for collective metric computation
+    rule_groups: dict[int, list[int]] = {}
+    for did in deck_names:
+        if mapping[did]:
+            rule_groups.setdefault(mapping[did][0], []).append(did)
+
+    # Pre-compute collective values per rule group and limit type
+    collective_values: dict[tuple[int, str], float] = {}
+    for rule_idx, group_dids in rule_groups.items():
+        rule = limits[rule_idx]
+        if 'youngCardLimit' in rule:
+            collective_values[(rule_idx, 'youngCardLimit')] = sum(young(anki, did) for did in group_dids)
+        if 'loadLimit' in rule:
+            collective_values[(rule_idx, 'loadLimit')] = sum(daily_load(anki, did) for did in group_dids)
+        if 'soonLimit' in rule:
+            collective_values[(rule_idx, 'soonLimit')] = sum(soon(anki, did, rule.get('soonDays', 7)) for did in group_dids)
+
+    def utilization_for_limit(limit_config_key: str, per_deck_func: Callable) -> list[UtilizationRow]:
         rows = []
         for did, deck_name in sorted(deck_names.items(), key=lambda x: x[1]):
-            deck_indentifer = {'id': did, 'name': deck_name}
-            rule = {} if not mapping[did] else limits[mapping[did][0]]
+            rule_idx = mapping[did][0] if mapping[did] else None
+            rule = {} if rule_idx is None else limits[rule_idx]
             limit = rule.get(limit_config_key, float('inf'))
-            value = deck_indentifer_limit_func(deck_indentifer, rule)
+
+            # Use collective value if this deck belongs to a multi-deck rule group
+            if rule_idx is not None and (rule_idx, limit_config_key) in collective_values:
+                value = collective_values[(rule_idx, limit_config_key)]
+            else:
+                value = per_deck_func(did, rule)
+
             utilization = 100.0 * (value / max(limit, sys.float_info.epsilon))
             deck_size = cards(anki, did)
             learned = seen(anki, did)
             deck_has_limits = not math.isinf(limit)
             report_ordinal = (-utilization, -value, limit, deck_name)
-            summary_ordinal = (-utilization, 0 if deck_has_limits else 1, -value, limit, deck_name) # prefer decks with defined limit should they all have 0 utilization
+            summary_ordinal = (-utilization, 0 if deck_has_limits else 1, -value, limit, deck_name)
 
             row = UtilizationRow(report_ordinal, summary_ordinal, utilization, value, limit, 'Verbose', limit_config_key, did, deck_name, deck_size, learned, deck_has_limits)
             rows.append(row)
         return rows
 
     ret = []
-    ret.extend(utilization_for_limit('youngCardLimit', lambda deck_indentifer, rule: young(anki, deck_indentifer['id'])))
-    ret.extend(utilization_for_limit('loadLimit', lambda deck_indentifer, rule: daily_load(anki, deck_indentifer['id'])))
-    ret.extend(utilization_for_limit('soonLimit', lambda deck_indentifer, rule: soon(anki, deck_indentifer['id'], rule.get('soonDays', 7))))
+    ret.extend(utilization_for_limit('youngCardLimit', lambda did, rule: young(anki, did)))
+    ret.extend(utilization_for_limit('loadLimit', lambda did, rule: daily_load(anki, did)))
+    ret.extend(utilization_for_limit('soonLimit', lambda did, rule: soon(anki, did, rule.get('soonDays', 7))))
     ret.sort()
 
     summary: dict[int, list[UtilizationRow]] = {}

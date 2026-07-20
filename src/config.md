@@ -8,6 +8,10 @@ A list of configurations containing info on what limit(s) to apply to which deck
 
 Used to control which decks the limit applies to. Can either be a list containing the deck names, or a regular expression string containing the pattern to match deck names. Using `"deckNames": ".*"` as the last configuration can serve as a way to have a 'default' configuration for all remaining decks.
 
+**Collective limits:** When a rule matches multiple decks, metrics (young cards, daily load, soon cards) are **summed across all matched decks** and the resulting new-card budget is shared among them. This means the limit applies to the group as a whole, not to each deck independently. To limit a single deck independently, create a separate rule for that deck alone.
+
+**Budget distribution:** The shared new-card budget is distributed to decks in alphabetical order, with each deck receiving up to its native Anki "New cards/day" limit. To control which deck(s) in a group receive new cards, set the native "New cards/day" to `0` for decks that should not receive any.
+
 When creating a limit for a specific sub-deck use the full name including the `::` delimiters between parent/child names (ex: `deckNames: ["lorem ipsum 1::part 1::chapter 2"]`). When calculating limits for a deck, all cards from child decks are included in calculations (same as how Anki v3 limits works).
 
 ### `.limits.[].youngCardLimit`
