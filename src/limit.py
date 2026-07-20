@@ -18,9 +18,33 @@ def rule_mapping(anki: Anki) -> dict[DeckId, list[int]]:
     for deck_indentifer in anki.get_deck_identifiers():
         ret[deck_indentifer.id] = []
         for idx, limits in enumerate(addon_config["limits"]):
-                if (isinstance(limits["deckNames"], str) and re.compile(limits["deckNames"]).match(deck_indentifer.name)) \
-                    or (isinstance(limits["deckNames"], list) and deck_indentifer.name in limits["deckNames"]):
-                        ret[deck_indentifer.id].append(idx)
+            deck_names_rule = limits["deckNames"]
+            
+            matched = False
+            if isinstance(deck_names_rule, str):
+                pattern = deck_names_rule
+                # Convert simple glob wildcards to regex for convenience
+                if pattern.startswith('*'):
+                    pattern = '.' + pattern
+                if pattern.endswith('*') and not pattern.endswith('.*'):
+                    pattern = pattern[:-1] + '.*'
+                
+                try:
+                    regex = re.compile(pattern, re.IGNORECASE)
+                except re.error:
+                    # Fallback to literal match if regex is completely invalid
+                    regex = re.compile(re.escape(deck_names_rule), re.IGNORECASE)
+                    
+                if regex.match(deck_indentifer.name):
+                    matched = True
+            elif isinstance(deck_names_rule, list):
+                # Case-insensitive comparison for lists
+                deck_name_lower = deck_indentifer.name.lower()
+                if any(deck_name_lower == str(name).lower() for name in deck_names_rule):
+                    matched = True
+                    
+            if matched:
+                ret[deck_indentifer.id].append(idx)
 
     return ret
 
