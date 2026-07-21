@@ -17,7 +17,7 @@ from typing import Any, Self
 from src.limit import update_limits
 from src.report import limit_utilization_report_data
 
-def create_mock_limit(deck_names: list[str], young: int | None = None, load: float | None = None, soon: int | None = None, soon_days: int | None = None, minimum: int | None = None) -> dict[str, Any]:
+def create_mock_limit(deck_names: list[str], young: int | None = None, load: float | None = None, soon: int | None = None, soon_days: int | None = None, minimum: int | None = None, collective: bool = False) -> dict[str, Any]:
     ret = {'deckNames': deck_names}
     if young:
         ret['youngCardLimit'] = young
@@ -29,6 +29,8 @@ def create_mock_limit(deck_names: list[str], young: int | None = None, load: flo
         ret['soonDays'] = soon_days
     if minimum:
         ret['minimum'] = minimum
+    if collective:
+        ret['collective'] = True
     return ret
 
 def create_mock_deck(id: int, name: str, cards: int, young: int, load: float, soon: int, new: int, new_limit: int, max_new: int, deck_max_new: int | None = None) -> dict[str, Any]:
@@ -86,11 +88,8 @@ class Test(unittest.TestCase):
         deck_under_limit = create_mock_deck(id=1, name='A', cards=1000, young=0, load=None, soon=None, new=None, new_limit=None, max_new=10)
         deck_near_limit = create_mock_deck(id=2, name='B', cards=1000, young=3, load=None, soon=None, new=None, new_limit=None, max_new=10)
         deck_over_limit = create_mock_deck(id=3, name='C', cards=1000, young=20, load=None, soon=None, new=None, new_limit=None, max_new=10)
-        # Each deck has its own rule for independent per-deck limiting
-        limit_a = create_mock_limit(deck_names=['A'], young=5)
-        limit_b = create_mock_limit(deck_names=['B'], young=5)
-        limit_c = create_mock_limit(deck_names=['C'], young=5)
-        anki = create_mock_anki([limit_a, limit_b, limit_c], [deck_under_limit, deck_near_limit, deck_over_limit])
+        limit = create_mock_limit(deck_names=['A', 'B', 'C'], young=5)
+        anki = create_mock_anki([limit], [deck_under_limit, deck_near_limit, deck_over_limit])
 
         update_limits(anki, force_update=True)
 
@@ -179,33 +178,29 @@ class Test(unittest.TestCase):
         self.assertEqual(5, deck['newLimitToday']['limit'], 'max new should match "this deck" over "preset" when defined')
 
     def test_floating_point_limits_persisted_as_integers(self: Self) -> None:
-        # Each deck gets its own rule to test per-deck rounding behavior
         soon_limit = create_mock_deck(id=1, name='A', cards=1000, young=0, load=0.0, soon=100, new=None, new_limit=None, max_new=10)
         young_limit = create_mock_deck(id=2, name='B', cards=1000, young=100, load=0.0, soon=0, new=None, new_limit=None, max_new=10)
-        limit_a = create_mock_limit(deck_names=['A'], young=105.2, soon=105.2)
-        limit_b = create_mock_limit(deck_names=['B'], young=105.2, soon=105.2)
-        anki = create_mock_anki([limit_a, limit_b], [soon_limit, young_limit])
+        limit = create_mock_limit(deck_names=['A', 'B'], young=105.2, soon=105.2)
+        anki = create_mock_anki([limit], [soon_limit, young_limit])
 
         update_limits(anki, force_update=True)
 
         self.assertEqual(5, soon_limit['newLimitToday']['limit'], 'soon_limit: 105.2 - 100 == 5 (not 5.2)')
         self.assertEqual(5, young_limit['newLimitToday']['limit'], 'young_limit: 105.2 - 100 == 5 (not 5.2)')
 
-    # === Collective limit tests ===
+    # === Collective limit tests (require collective: true) ===
 
     def test_collective_young_limit(self: Self) -> None:
-        """Multiple decks in one rule: young cards are summed collectively"""
+        """Multiple decks in one rule with collective=true: young cards are summed collectively"""
         deck_a = create_mock_deck(id=1, name='A', cards=1000, young=20, load=None, soon=None, new=None, new_limit=None, max_new=10)
         deck_b = create_mock_deck(id=2, name='B', cards=1000, young=15, load=None, soon=None, new=None, new_limit=None, max_new=10)
         deck_c = create_mock_deck(id=3, name='C', cards=1000, young=10, load=None, soon=None, new=None, new_limit=None, max_new=10)
-        limit = create_mock_limit(deck_names=['A', 'B', 'C'], young=50)
+        limit = create_mock_limit(deck_names=['A', 'B', 'C'], young=50, collective=True)
         anki = create_mock_anki([limit], [deck_a, deck_b, deck_c])
 
         update_limits(anki, force_update=True)
 
         # total young = 20+15+10 = 45, budget = 50-45 = 5
-        # A gets min(5, 10) = 5, remaining = 0
-        # B gets 0, C gets 0
         total_new = deck_a['newLimitToday']['limit'] + deck_b['newLimitToday']['limit'] + deck_c['newLimitToday']['limit']
         self.assertEqual(5, total_new, 'collective budget should be 50 - 45 = 5 total new cards')
         self.assertEqual(5, deck_a['newLimitToday']['limit'], 'A gets the budget first (alphabetical)')
@@ -217,13 +212,11 @@ class Test(unittest.TestCase):
         deck_a = create_mock_deck(id=1, name='A', cards=1000, young=10, load=None, soon=None, new=None, new_limit=None, max_new=0)
         deck_b = create_mock_deck(id=2, name='B', cards=1000, young=10, load=None, soon=None, new=None, new_limit=None, max_new=0)
         deck_c = create_mock_deck(id=3, name='C', cards=1000, young=10, load=None, soon=None, new=None, new_limit=None, max_new=20)
-        limit = create_mock_limit(deck_names=['A', 'B', 'C'], young=50)
+        limit = create_mock_limit(deck_names=['A', 'B', 'C'], young=50, collective=True)
         anki = create_mock_anki([limit], [deck_a, deck_b, deck_c])
 
         update_limits(anki, force_update=True)
 
-        # total young = 30, budget = 50-30 = 20
-        # A: native limit=0, gets 0; B: native limit=0, gets 0; C: native limit=20, gets min(20, 20) = 20
         self.assertEqual(0, deck_a['newLimitToday']['limit'], 'A has native limit 0')
         self.assertEqual(0, deck_b['newLimitToday']['limit'], 'B has native limit 0')
         self.assertEqual(20, deck_c['newLimitToday']['limit'], 'C gets the full collective budget')
@@ -232,12 +225,11 @@ class Test(unittest.TestCase):
         """When total young exceeds collective limit, all decks get 0"""
         deck_a = create_mock_deck(id=1, name='A', cards=1000, young=30, load=None, soon=None, new=None, new_limit=None, max_new=10)
         deck_b = create_mock_deck(id=2, name='B', cards=1000, young=25, load=None, soon=None, new=None, new_limit=None, max_new=10)
-        limit = create_mock_limit(deck_names=['A', 'B'], young=50)
+        limit = create_mock_limit(deck_names=['A', 'B'], young=50, collective=True)
         anki = create_mock_anki([limit], [deck_a, deck_b])
 
         update_limits(anki, force_update=True)
 
-        # total young = 55 > 50, budget = 0
         self.assertEqual(0, deck_a['newLimitToday']['limit'], 'over collective limit, no new cards')
         self.assertEqual(0, deck_b['newLimitToday']['limit'], 'over collective limit, no new cards')
 
@@ -245,41 +237,24 @@ class Test(unittest.TestCase):
         """Minimum is respected per-deck as a floor, can exceed collective budget"""
         deck_a = create_mock_deck(id=1, name='A', cards=1000, young=15, load=None, soon=None, new=0, new_limit=None, max_new=10)
         deck_b = create_mock_deck(id=2, name='B', cards=1000, young=15, load=None, soon=None, new=0, new_limit=None, max_new=10)
-        limit = create_mock_limit(deck_names=['A', 'B'], young=33, minimum=2)
+        limit = create_mock_limit(deck_names=['A', 'B'], young=33, minimum=2, collective=True)
         anki = create_mock_anki([limit], [deck_a, deck_b])
 
         update_limits(anki, force_update=True)
 
-        # total young = 30, budget = 33-30 = 3
-        # A: demand=10, allocation=min(3, 10)=3, min_needed=2, 3 >= 2 so no bump
-        # A gets 3, remaining = 0
-        # B: demand=10, allocation=min(0, 10)=0, min_needed=2, 2 > 0 and 10 >= 2 → bumped to 2
-        # B gets 2 (minimum overrides exhausted budget, matching original minimum behavior)
         self.assertEqual(3, deck_a['newLimitToday']['limit'], 'A gets 3 from collective budget')
         self.assertEqual(2, deck_b['newLimitToday']['limit'], 'B gets minimum=2 even though budget exhausted')
 
-    def test_wildcard_and_case_insensitive_matching(self: Self) -> None:
-        """Test that matching supports case-insensitivity and converts intuitive wildcards"""
-        deck_exact = create_mock_deck(id=1, name='German Verbs', cards=1000, young=10, load=None, soon=None, new=0, new_limit=None, max_new=10)
-        deck_wildcard = create_mock_deck(id=2, name='My german deck', cards=1000, young=10, load=None, soon=None, new=0, new_limit=None, max_new=10)
-        deck_nomatch = create_mock_deck(id=3, name='French Verbs', cards=1000, young=10, load=None, soon=None, new=0, new_limit=None, max_new=10)
-        
-        # Test 1: case-insensitive list matching
-        limit_list = create_mock_limit(deck_names=['german verbs'], young=50)
-        anki_list = create_mock_anki([limit_list], [deck_exact])
-        # Force rule mapping generation
-        from src.limit import rule_mapping
-        mapping_list = rule_mapping(anki_list)
-        self.assertEqual([0], mapping_list.get(deck_exact['id']), "Should match case-insensitive list")
-        
-        # Test 2: intuitive wildcard (*german*) converting to regex (.*german.*) and matching case-insensitively
-        limit_wildcard = create_mock_limit(deck_names='*german*', young=50)
-        anki_wildcard = create_mock_anki([limit_wildcard], [deck_exact, deck_wildcard, deck_nomatch])
-        mapping_wildcard = rule_mapping(anki_wildcard)
-        
-        self.assertEqual([0], mapping_wildcard.get(deck_exact['id']), "Should match 'German Verbs' with '*german*'")
-        self.assertEqual([0], mapping_wildcard.get(deck_wildcard['id']), "Should match 'My german deck' with '*german*'")
-        self.assertEqual([], mapping_wildcard.get(deck_nomatch['id']), "Should not match 'French Verbs'")
+    def test_single_deck_rule_unchanged(self: Self) -> None:
+        """A rule with only one deck behaves identically to old per-deck logic"""
+        deck = create_mock_deck(id=1, name='A', cards=1000, young=3, load=None, soon=None, new=0, new_limit=None, max_new=10)
+        limit = create_mock_limit(deck_names=['A'], young=5)
+        anki = create_mock_anki([limit], [deck])
+
+        update_limits(anki, force_update=True)
+
+        self.assertEqual(2, deck['newLimitToday']['limit'], 'single deck: 5 - 3 = 2, same as old behavior')
+
 
 if __name__ == '__main__':
     unittest.main()
