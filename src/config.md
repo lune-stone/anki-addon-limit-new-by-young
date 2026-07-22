@@ -10,6 +10,26 @@ Used to control which decks the limit applies to. Can either be a list containin
 
 When creating a limit for a specific sub-deck use the full name including the `::` delimiters between parent/child names (ex: `deckNames: ["lorem ipsum 1::part 1::chapter 2"]`). When calculating limits for a deck, all cards from child decks are included in calculations (same as how Anki v3 limits works).
 
+### `.limits.[].collective`
+
+A boolean that controls whether a rule evaluates its matched decks collectively or independently. Default value is `false` if not defined in the config json.
+
+When `false` (default), each deck matched by the rule is evaluated independently — the limit applies to each deck on its own, which is the original behavior.
+
+When `true`, metrics (young cards, daily load, soon cards) are **summed across all matched decks** and the resulting new-card budget is shared among them. The shared budget is distributed to decks in alphabetical order, with each deck receiving up to its native Anki "New cards/day" limit. To control which deck(s) in a group receive new cards, set the native "New cards/day" to `0` for decks that should not receive any.
+
+Example:
+```
+"limits": [
+    {
+        "deckNames": ["German Verbs", "German Nouns", "German Adjectives"],
+        "youngCardLimit": 80,
+        "collective": true
+    }
+]
+```
+This limits the **total** young cards across all 3 German decks to 80, rather than limiting each to 80 independently.
+
 ### `.limits.[].youngCardLimit`
 
 A positive integer that represents the number of young cards that the deck should not go over when adding new cards for the day. This value does not replace existing daily limits on new cards but will work together with them. For example if there are too many reviews in addition to too many young cards for today, then the new card limit for the day will be set to the minimum value between the two limits.

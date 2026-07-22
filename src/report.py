@@ -207,13 +207,39 @@ def limit_utilization_report_data(anki: Anki) -> list[UtilizationRow]:
     deck_names = {x.id: x.name for x in anki.get_deck_identifiers()}
     mapping = rule_mapping(anki)
 
+    # Group decks by their first-matching rule for collective metric computation
+    rule_groups: dict[int, list[int]] = {}
+    for did in deck_names:
+        if mapping[did]:
+            rule_groups.setdefault(mapping[did][0], []).append(did)
+
+    # Pre-compute collective values only for rules with collective: true
+    collective_values: dict[tuple[int, str], float] = {}
+    for rule_idx, group_dids in rule_groups.items():
+        rule = limits[rule_idx]
+        if not rule.get('collective', False):
+            continue
+        if 'youngCardLimit' in rule:
+            collective_values[(rule_idx, 'youngCardLimit')] = sum(young(anki, did) for did in group_dids)
+        if 'loadLimit' in rule:
+            collective_values[(rule_idx, 'loadLimit')] = sum(daily_load(anki, did) for did in group_dids)
+        if 'soonLimit' in rule:
+            collective_values[(rule_idx, 'soonLimit')] = sum(soon(anki, did, rule.get('soonDays', 7)) for did in group_dids)
+
     def utilization_for_limit(limit_config_key: str, deck_indentifer_limit_func: Callable) -> list[UtilizationRow]:
         rows = []
         for did, deck_name in sorted(deck_names.items(), key=lambda x: x[1]):
-            deck_indentifer = {'id': did, 'name': deck_name}
-            rule = {} if not mapping[did] else limits[mapping[did][0]]
+            rule_idx = mapping[did][0] if mapping[did] else None
+            rule = {} if rule_idx is None else limits[rule_idx]
             limit = rule.get(limit_config_key, float('inf'))
-            value = deck_indentifer_limit_func(deck_indentifer, rule)
+
+            # Use collective value only if rule is collective
+            if rule_idx is not None and (rule_idx, limit_config_key) in collective_values:
+                value = collective_values[(rule_idx, limit_config_key)]
+            else:
+                deck_indentifer = {'id': did, 'name': deck_name}
+                value = deck_indentifer_limit_func(deck_indentifer, rule)
+
             utilization = 100.0 * (value / max(limit, sys.float_info.epsilon))
             deck_size = cards(anki, did)
             learned = seen(anki, did)

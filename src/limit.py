@@ -71,45 +71,113 @@ def update_limits(anki: Anki, hook_enabled_config_key: str | None = None, force_
         anki.tooltip('Updating limits...')
 
     mapping = rule_mapping(anki)
+    all_deck_identifiers = list(anki.get_deck_identifiers())
 
-    for deck_indentifer in anki.get_deck_identifiers():
-        matching_rules_idxs = mapping.get(deck_indentifer.id, [])
-        if not matching_rules_idxs:
+    # Group decks by their first-matching rule index
+    rule_groups: dict[int, list] = {}
+    for deck_ident in all_deck_identifiers:
+        rule_indices = mapping.get(deck_ident.id, [])
+        if not rule_indices:
+            continue
+        primary_rule_idx = rule_indices[0]
+        rule_groups.setdefault(primary_rule_idx, []).append(deck_ident)
+
+    for rule_idx, group_decks in rule_groups.items():
+        addon_config_limits = addon_config["limits"][rule_idx]
+        is_collective = addon_config_limits.get('collective', False)
+
+        # Check if any deck in the group needs updating
+        should_process = force_update or addon_config.get('recalculateLimitIfAlreadySet', False)
+        if not should_process:
+            for deck_ident in group_decks:
+                deck = anki.get_deck_by_id(deck_ident.id)
+                limit_already_set = False if deck["newLimitToday"] is None else deck["newLimitToday"]["today"] == today
+                if not limit_already_set:
+                    should_process = True
+                    break
+
+        if not should_process:
             continue
 
-        addon_config_limits = addon_config["limits"][matching_rules_idxs[0]]
-        deck = anki.get_deck_by_id(deck_indentifer.id)
+        if is_collective:
+            # --- Collective mode: sum metrics across all decks in the group ---
+            total_deck_size = sum(cards(anki, d.id) for d in group_decks)
 
-        limit_already_set = False if deck["newLimitToday"] is None else deck["newLimitToday"]["today"] == today
+            young_card_limit = addon_config_limits.get('youngCardLimit', 999999999)
+            total_young = 0 if young_card_limit > total_deck_size else sum(young(anki, d.id) for d in group_decks)
 
-        if not (force_update or addon_config.get('recalculateLimitIfAlreadySet', False)) and limit_already_set:
-            continue
+            load_limit = addon_config_limits.get('loadLimit', 999999999)
+            total_load = 0.0 if load_limit > total_deck_size else sum(daily_load(anki, d.id) for d in group_decks)
 
-        deck_config = anki.config_dict_for_deck_id(deck_indentifer.id)
-        deck_size = cards(anki, deck_indentifer.id)
-        new_today = 0 if today != deck['newToday'][0] else deck['newToday'][1]
+            soon_days = addon_config_limits.get('soonDays', 7)
+            soon_limit = addon_config_limits.get('soonLimit', 999999999)
+            total_soon = 0 if soon_limit > total_deck_size else sum(soon(anki, d.id, soon_days) for d in group_decks)
 
-        young_card_limit = addon_config_limits.get('youngCardLimit', 999999999)
-        young_count = 0 if young_card_limit > deck_size else young(anki, deck_indentifer.id)
+            minimum = addon_config_limits.get('minimum', 0)
 
-        load_limit = addon_config_limits.get('loadLimit', 999999999)
-        load = 0.0 if load_limit > deck_size else daily_load(anki, deck_indentifer.id)
+            # Collective budget: can be negative when over limit — per-deck formula handles clamping
+            collective_budget = min(
+                young_card_limit - total_young,
+                math.ceil(load_limit - total_load),
+                soon_limit - total_soon
+            )
 
-        soon_days = addon_config_limits.get('soonDays', 7)
-        soon_limit = addon_config_limits.get('soonLimit', 999999999)
-        soon_count = 0 if soon_limit > deck_size else soon(anki, deck_indentifer.id, soon_days)
+            # Distribute budget across decks (sorted by name for determinism)
+            sorted_group = sorted(group_decks, key=lambda d: d.name)
 
-        minimum = addon_config_limits.get('minimum', 0)
+            remaining = collective_budget
+            for deck_ident in sorted_group:
+                deck = anki.get_deck_by_id(deck_ident.id)
+                deck_config = anki.config_dict_for_deck_id(deck_ident.id)
+                max_new_cards_per_day = deck.get('newLimit') or deck_config['new']['perDay']
+                new_today = 0 if today != deck['newToday'][0] else deck['newToday'][1]
 
-        max_new_cards_per_day = deck.get('newLimit') or deck_config['new']['perDay']
+                effective_config_limit = remaining
+                new_limit = max(0, minimum - new_today, min(max_new_cards_per_day - new_today, effective_config_limit) + new_today)
 
-        effective_config_limit = min(young_card_limit - young_count, math.ceil(load_limit - load), soon_limit - soon_count)
-        new_limit = max(0, minimum - new_today, min(max_new_cards_per_day - new_today, effective_config_limit) + new_today)
+                consumed = max(0, new_limit - new_today)
+                remaining -= min(consumed, remaining)
 
-        if not(limit_already_set and deck["newLimitToday"]["limit"] == new_limit):
-            deck["newLimitToday"] = {"limit": round(new_limit), "today": today}
-            anki.save_deck(deck)
-            limits_changed += 1
+                limit_already_set = False if deck["newLimitToday"] is None else deck["newLimitToday"]["today"] == today
+                if not(limit_already_set and deck["newLimitToday"]["limit"] == new_limit):
+                    deck["newLimitToday"] = {"limit": round(new_limit), "today": today}
+                    anki.save_deck(deck)
+                    limits_changed += 1
+        else:
+            # --- Original per-deck mode: each deck evaluated independently ---
+            for deck_indentifer in group_decks:
+                deck = anki.get_deck_by_id(deck_indentifer.id)
+
+                limit_already_set = False if deck["newLimitToday"] is None else deck["newLimitToday"]["today"] == today
+
+                if not (force_update or addon_config.get('recalculateLimitIfAlreadySet', False)) and limit_already_set:
+                    continue
+
+                deck_config = anki.config_dict_for_deck_id(deck_indentifer.id)
+                deck_size = cards(anki, deck_indentifer.id)
+                new_today = 0 if today != deck['newToday'][0] else deck['newToday'][1]
+
+                young_card_limit = addon_config_limits.get('youngCardLimit', 999999999)
+                young_count = 0 if young_card_limit > deck_size else young(anki, deck_indentifer.id)
+
+                load_limit = addon_config_limits.get('loadLimit', 999999999)
+                load = 0.0 if load_limit > deck_size else daily_load(anki, deck_indentifer.id)
+
+                soon_days = addon_config_limits.get('soonDays', 7)
+                soon_limit = addon_config_limits.get('soonLimit', 999999999)
+                soon_count = 0 if soon_limit > deck_size else soon(anki, deck_indentifer.id, soon_days)
+
+                minimum = addon_config_limits.get('minimum', 0)
+
+                max_new_cards_per_day = deck.get('newLimit') or deck_config['new']['perDay']
+
+                effective_config_limit = min(young_card_limit - young_count, math.ceil(load_limit - load), soon_limit - soon_count)
+                new_limit = max(0, minimum - new_today, min(max_new_cards_per_day - new_today, effective_config_limit) + new_today)
+
+                if not(limit_already_set and deck["newLimitToday"]["limit"] == new_limit):
+                    deck["newLimitToday"] = {"limit": round(new_limit), "today": today}
+                    anki.save_deck(deck)
+                    limits_changed += 1
 
     if limits_changed > 0:
         anki.safe_reset()
