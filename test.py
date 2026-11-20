@@ -15,7 +15,7 @@ from types import SimpleNamespace
 from typing import Any, Self
 
 from src.limit import update_limits
-from src.report import limit_utilization_report_data
+from src.report import collective_young_diagnostic_report, limit_utilization_report_data, utilization_rows_report
 
 def create_mock_limit(deck_names: list[str], young: int | None = None, load: float | None = None, soon: int | None = None, soon_days: int | None = None, minimum: int | None = None, collective: bool = False) -> dict[str, Any]:
     ret = {'deckNames': deck_names}
@@ -33,10 +33,14 @@ def create_mock_limit(deck_names: list[str], young: int | None = None, load: flo
         ret['collective'] = True
     return ret
 
-def create_mock_deck(id: int, name: str, cards: int, young: int, load: float, soon: int, new: int, new_limit: int, max_new: int, deck_max_new: int | None = None) -> dict[str, Any]:
-    return {'id': id, 'name': name, 'cards': cards, 'young': young, 'load': load, 'soon': soon, 'newToday': [0, 0] if not new else [0, new], 'newLimitToday': None if not new_limit else {'today': 0, 'limit': new_limit}, 'new': {'perDay': max_new }, 'newLimit': deck_max_new}
+def create_mock_deck(id: int, name: str, cards: int, young: int, load: float, soon: int, new: int, new_limit: int, max_new: int, deck_max_new: int | None = None, children: list[int] | None = None) -> dict[str, Any]:
+    # young/soon/cards/load describe the deck's *own* cards; `children` lists the ids of its subdecks
+    return {'id': id, 'name': name, 'cards': cards, 'young': young, 'load': load, 'soon': soon, 'newToday': [0, 0] if not new else [0, new], 'newLimitToday': None if not new_limit else {'today': 0, 'limit': new_limit}, 'new': {'perDay': max_new }, 'newLimit': deck_max_new, 'children': children or []}
 
 def create_mock_anki(limits, decks):
+    def deck_ids_in(text):
+        return [int(x) for x in re.findall('[0-9]+', text)]
+
     class MockAnki:
 
         def get_config(self):
@@ -49,7 +53,8 @@ def create_mock_anki(limits, decks):
             return [SimpleNamespace(id=x['id'], name=x['name']) for x in decks]
 
         def get_subdeck_ids_csv(self, deck_id):
-            return str(deck_id)
+            deck = next(x for x in decks if x['id'] == deck_id)
+            return '(' + ','.join(str(x) for x in [deck_id] + deck['children']) + ')'
 
         def get_deck_by_id(self, deck_id):
             return next(x for x in decks if x['id'] == deck_id)
@@ -62,19 +67,16 @@ def create_mock_anki(limits, decks):
 
         def col(self):
             def f(search):
-                deck_id = int(re.sub('.*did:([0-9]*).*', '\\1', search))
-                deck = [x for x in decks if x['id'] == deck_id][0]
-                if 'prop:ivl<21' in search:
-                    return list(range(deck['young']))
-                if 'prop:due<' in search:
-                    return list(range(deck['soon']))
-                return list(range(deck['cards']))
+                # every card has a unique id: (deck id, kind, n), so overlapping deck lists can be detected
+                ids = deck_ids_in(re.sub('.*did:([0-9,]*).*', '\\1', search))
+                kind = 'young' if 'prop:ivl<21' in search else 'soon' if 'prop:due<' in search else 'cards'
+                return [(x['id'], kind, n) for x in decks if x['id'] in ids for n in range(x[kind] or 0)]
             return SimpleNamespace(sched =  SimpleNamespace(today= 0), find_cards=f)
 
         def db(self):
             def f(search):
-                did = [x for x in search.split('\n') if 'did IN' in x][0]
-                return [decks[0]['load']]
+                ids = deck_ids_in([x for x in search.split('\n') if 'did IN' in x][0])
+                return [sum(x['load'] or 0 for x in decks if x['id'] in ids)]
             return SimpleNamespace(first = f)
 
         def safe_reset(self):
@@ -151,6 +153,22 @@ class Test(unittest.TestCase):
         data = limit_utilization_report_data(anki)
         summary = [x for x in data if x.detail_level == 'Summary'][0]
         self.assertEqual('youngCardLimit', summary.limit_type, 'should not pick an undefined limit type, even if the value is higher')
+
+    def test_collective_report_renders_shared_young_limit_once(self: Self) -> None:
+        deck_a = create_mock_deck(id=1, name='A', cards=1000, young=20, load=0.0, soon=0, new=None, new_limit=None, max_new=10)
+        deck_b = create_mock_deck(id=2, name='B', cards=1000, young=15, load=0.0, soon=0, new=None, new_limit=None, max_new=10)
+        limit = create_mock_limit(deck_names=['A', 'B'], young=50, collective=True)
+        anki = create_mock_anki([limit], [deck_a, deck_b])
+        data = limit_utilization_report_data(anki)
+        young_rows = [x for x in data if x.detail_level == 'Verbose' and x.limit_type == 'youngCardLimit']
+
+        report_lines = utilization_rows_report(young_rows)
+
+        self.assertIn('70.00% (35 of 50)\tCollective rule #1', report_lines)
+        self.assertEqual(1, len([line for line in report_lines if '35 of 50' in line]))
+        self.assertIn('\tAffected decks:', report_lines)
+        self.assertIn('\t\tA', report_lines)
+        self.assertIn('\t\tB', report_lines)
 
     def test_minimum_limit(self: Self) -> None:
         deck = create_mock_deck(id=1, name='A', cards=1000, young=5, load=10.2, soon=0, new=0, new_limit=None, max_new=10)
@@ -254,6 +272,38 @@ class Test(unittest.TestCase):
         update_limits(anki, force_update=True)
 
         self.assertEqual(2, deck['newLimitToday']['limit'], 'single deck: 5 - 3 = 2, same as old behavior')
+
+    def test_collective_counts_parent_and_subdeck_cards_once(self: Self) -> None:
+        """Listing a parent deck together with its subdeck must not count the subdeck's cards twice"""
+        parent = create_mock_deck(id=1, name='P', cards=1000, young=10, load=None, soon=None, new=None, new_limit=None, max_new=10, children=[2])
+        child = create_mock_deck(id=2, name='P::C', cards=1000, young=5, load=None, soon=None, new=None, new_limit=None, max_new=10)
+        limit = create_mock_limit(deck_names=['P', 'P::C'], young=20, collective=True)
+        anki = create_mock_anki([limit], [parent, child])
+
+        update_limits(anki, force_update=True)
+
+        # unique young = 10 (P) + 5 (P::C) = 15, budget = 20 - 15 = 5; double counting would give 25 -> budget 0
+        self.assertEqual(5, parent['newLimitToday']['limit'], 'P gets the whole budget of 20 - 15 = 5')
+        self.assertEqual(0, child['newLimitToday']['limit'], 'budget already used by P')
+
+    def test_collective_report_counts_parent_and_subdeck_cards_once(self: Self) -> None:
+        parent = create_mock_deck(id=1, name='P', cards=1000, young=10, load=0.0, soon=0, new=None, new_limit=None, max_new=10, children=[2])
+        child = create_mock_deck(id=2, name='P::C', cards=1000, young=5, load=0.0, soon=0, new=None, new_limit=None, max_new=10)
+        limit = create_mock_limit(deck_names=['P', 'P::C'], young=20, collective=True)
+        anki = create_mock_anki([limit], [parent, child])
+
+        data = limit_utilization_report_data(anki)
+        young_rows = [x for x in data if x.detail_level == 'Verbose' and x.limit_type == 'youngCardLimit']
+        self.assertEqual({15}, {x.value for x in young_rows}, 'collective value counts each card once')
+
+        diagnostic = collective_young_diagnostic_report(anki)
+        self.assertIn('Rule #1: 15 of 20 young cards used (75.00%).', diagnostic)
+        self.assertIn('5 overlapping young cards were counted only once', diagnostic)
+
+    def test_diagnostic_ignores_non_collective_rules(self: Self) -> None:
+        deck = create_mock_deck(id=1, name='A', cards=1000, young=3, load=0.0, soon=0, new=None, new_limit=None, max_new=10)
+        anki = create_mock_anki([create_mock_limit(deck_names=['A'], young=5)], [deck])
+        self.assertEqual('No collective youngCardLimit rules matched any decks.', collective_young_diagnostic_report(anki))
 
 
 if __name__ == '__main__':
