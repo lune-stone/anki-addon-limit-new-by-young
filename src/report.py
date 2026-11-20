@@ -13,7 +13,18 @@ import aqt.qt as qt
 if TYPE_CHECKING:
     from .anki_api import AnkiApi as Anki
 
-from .limit import cards, daily_load, rule_mapping, seen, soon, young
+from .limit import (
+    cards,
+    daily_load,
+    group_daily_load,
+    group_soon,
+    group_young,
+    rule_mapping,
+    seen,
+    soon,
+    young,
+    young_card_ids,
+)
 
 
 def text_dialog(message: str, title: str) -> None:
@@ -38,6 +49,70 @@ def text_dialog(message: str, title: str) -> None:
     dialog.keyPressEvent = on_key_press #type: ignore[assignment, method-assign]
 
     dialog.show()
+
+
+def collective_young_diagnostic_report(anki: Anki) -> str:
+    """Explain how collective youngCardLimit rules arrive at their young-card count.
+
+    Collective rules count every card once, even when a rule lists both a parent
+    deck and its subdecks. This report shows the unique total the add-on uses,
+    how much parent/subdeck overlap was removed, and the per-deck breakdown.
+    """
+    limits = anki.get_config().get('limits', [])
+    deck_names = {x.id: x.name for x in anki.get_deck_identifiers()}
+    mapping = rule_mapping(anki)
+
+    rule_groups: dict[int, list[int]] = {}
+    for did in deck_names:
+        if mapping[did]:
+            rule_groups.setdefault(mapping[did][0], []).append(did)
+
+    lines: list[str] = []
+    for rule_idx, group_dids in sorted(rule_groups.items()):
+        rule = limits[rule_idx]
+        if 'youngCardLimit' not in rule or not rule.get('collective', False):
+            continue
+
+        limit = rule['youngCardLimit']
+        per_deck: list[tuple[int, str]] = []
+        unique_card_ids: set = set()
+
+        for did in group_dids:
+            ids = set(young_card_ids(anki, [did]))
+            unique_card_ids.update(ids)
+            if ids:
+                per_deck.append((len(ids), deck_names[did]))
+
+        unique = len(unique_card_ids)
+        overlap = sum(count for count, _ in per_deck) - unique
+        remaining = limit - unique
+        utilization = 100.0 * (unique / max(limit, sys.float_info.epsilon))
+
+        lines.append(f'Rule #{rule_idx + 1}: {unique} of {limit} young cards used ({utilization:.2f}%).')
+        lines.append(f'\tRemaining collective new-card budget: {remaining}')
+
+        if remaining < 0:
+            lines.append('\tStatus: over limit, so new cards are reduced to 0 (or the rule\'s minimum).')
+        elif remaining == 0:
+            lines.append('\tStatus: exactly at limit, so no new-card budget remains.')
+        else:
+            lines.append('\tStatus: under limit, so this many new cards may be shared across the group.')
+
+        if overlap > 0:
+            lines.append(f'\tNote: the rule lists parent decks together with their subdecks; {overlap} overlapping young cards were counted only once.')
+
+        if per_deck:
+            lines.append('\tYoung cards per listed deck (including its subdecks):')
+            for count, name in sorted(per_deck, key=lambda x: (-x[0], x[1])):
+                lines.append(f'\t\t{count}\t{name}')
+        else:
+            lines.append('\tNo young cards in this rule group.')
+        lines.append('')
+
+    if not lines:
+        lines.append('No collective youngCardLimit rules matched any decks.')
+
+    return '\n'.join(lines)
 
 def utilization_dialog(anki: Anki) -> None:
     data = limit_utilization_report_data(anki)
@@ -109,23 +184,30 @@ def utilization_dialog(anki: Anki) -> None:
             lines.append('')
             lines.extend([str(x) for x in d if x.detail_level == 'Summary'])
         else:
+            lines.append('=== Collective Young Count Diagnostic ===')
+            lines.append('')
+            lines.extend(collective_young_diagnostic_report(anki).splitlines())
+
+            lines.append('')
+            lines.append('')
+
             lines.append('=== Young Limit ===')
             lines.append('')
-            lines.extend([str(x) for x in d if x.limit_type == 'youngCardLimit' and x.detail_level == 'Verbose'])
+            lines.extend(utilization_rows_report([x for x in d if x.limit_type == 'youngCardLimit' and x.detail_level == 'Verbose']))
 
             lines.append('')
             lines.append('')
 
             lines.append('=== Daily Load Limit ===')
             lines.append('')
-            lines.extend([str(x) for x in d if x.limit_type == 'loadLimit' and x.detail_level == 'Verbose'])
+            lines.extend(utilization_rows_report([x for x in d if x.limit_type == 'loadLimit' and x.detail_level == 'Verbose']))
 
             lines.append('')
             lines.append('')
 
             lines.append('=== Soon Limit ===')
             lines.append('')
-            lines.extend([str(x) for x in d if x.limit_type == 'soonLimit' and x.detail_level == 'Verbose'])
+            lines.extend(utilization_rows_report([x for x in d if x.limit_type == 'soonLimit' and x.detail_level == 'Verbose']))
 
         message = '\n'.join(lines)
         text_edit.setPlainText(message)
@@ -186,6 +268,8 @@ class UtilizationRow:
     limit: int | float
     detail_level: str
     limit_type: str
+    rule_idx: int | None = dataclasses.field(compare=False)
+    is_collective: bool = dataclasses.field(compare=False)
     ###
     deck_id: int
     deck_name: str
@@ -201,6 +285,31 @@ class UtilizationRow:
         limit_type = '' if self.detail_level == 'Verbose' else f'\t[{self.limit_type}]'
         limit_type = re.sub('[A-Z][a-zA-Z]*', '', limit_type) # `young, soon, load` rather than `youngCardLimit, ...`
         return f'{utilization}% ({value} of {limit}){limit_type}\t{self.deck_name}'
+
+def utilization_rows_report(rows: list[UtilizationRow]) -> list[str]:
+    line_groups: list[tuple[tuple, list[str]]] = []
+    collective_groups: dict[tuple[int, str], list[UtilizationRow]] = {}
+
+    for row in rows:
+        if row.detail_level == 'Verbose' and row.is_collective and row.rule_idx is not None:
+            collective_groups.setdefault((row.rule_idx, row.limit_type), []).append(row)
+        else:
+            line_groups.append((row.display_ordinal, [str(row)]))
+
+    for (rule_idx, _limit_type), group_rows in collective_groups.items():
+        sample = group_rows[0]
+        utilization = f'{min(9999.99, sample.utilization):.2f}'
+        value = f'{sample.value:.2f}' if isinstance(sample.value, float) else sample.value
+        limit = '∞' if sample.limit == float('inf') else sample.limit
+        limit = f'{limit:.2f}' if isinstance(limit, float) else limit
+
+        group_lines = [f'{utilization}% ({value} of {limit})\tCollective rule #{rule_idx + 1}', '\tAffected decks:']
+        for row in sorted(group_rows, key=lambda x: x.deck_name):
+            group_lines.append(f'\t\t{row.deck_name}')
+
+        line_groups.append((min(row.display_ordinal for row in group_rows), group_lines))
+
+    return [line for _ordinal, group_lines in sorted(line_groups) for line in group_lines]
 
 def limit_utilization_report_data(anki: Anki) -> list[UtilizationRow]:
     limits = anki.get_config().get('limits', [])
@@ -219,12 +328,13 @@ def limit_utilization_report_data(anki: Anki) -> list[UtilizationRow]:
         rule = limits[rule_idx]
         if not rule.get('collective', False):
             continue
+        # each card counted once, even if the rule lists a parent deck and its subdecks
         if 'youngCardLimit' in rule:
-            collective_values[(rule_idx, 'youngCardLimit')] = sum(young(anki, did) for did in group_dids)
+            collective_values[(rule_idx, 'youngCardLimit')] = group_young(anki, group_dids)
         if 'loadLimit' in rule:
-            collective_values[(rule_idx, 'loadLimit')] = sum(daily_load(anki, did) for did in group_dids)
+            collective_values[(rule_idx, 'loadLimit')] = group_daily_load(anki, group_dids)
         if 'soonLimit' in rule:
-            collective_values[(rule_idx, 'soonLimit')] = sum(soon(anki, did, rule.get('soonDays', 7)) for did in group_dids)
+            collective_values[(rule_idx, 'soonLimit')] = group_soon(anki, group_dids, rule.get('soonDays', 7))
 
     def utilization_for_limit(limit_config_key: str, deck_indentifer_limit_func: Callable) -> list[UtilizationRow]:
         rows = []
@@ -233,8 +343,9 @@ def limit_utilization_report_data(anki: Anki) -> list[UtilizationRow]:
             rule = {} if rule_idx is None else limits[rule_idx]
             limit = rule.get(limit_config_key, float('inf'))
 
-            # Use collective value only if rule is collective
-            if rule_idx is not None and (rule_idx, limit_config_key) in collective_values:
+            # Use collective value only when this exact metric is configured collectively.
+            uses_collective_value = rule_idx is not None and (rule_idx, limit_config_key) in collective_values
+            if uses_collective_value:
                 value = collective_values[(rule_idx, limit_config_key)]
             else:
                 deck_indentifer = {'id': did, 'name': deck_name}
@@ -247,7 +358,22 @@ def limit_utilization_report_data(anki: Anki) -> list[UtilizationRow]:
             report_ordinal = (-utilization, -value, limit, deck_name)
             summary_ordinal = (-utilization, 0 if deck_has_limits else 1, -value, limit, deck_name) # prefer decks with defined limit should they all have 0 utilization
 
-            row = UtilizationRow(report_ordinal, summary_ordinal, utilization, value, limit, 'Verbose', limit_config_key, did, deck_name, deck_size, learned, deck_has_limits)
+            row = UtilizationRow(
+                report_ordinal,
+                summary_ordinal,
+                utilization,
+                value,
+                limit,
+                'Verbose',
+                limit_config_key,
+                rule_idx,
+                uses_collective_value,
+                did,
+                deck_name,
+                deck_size,
+                learned,
+                deck_has_limits
+            )
             rows.append(row)
         return rows
 

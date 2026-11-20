@@ -5,6 +5,8 @@ import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from anki.decks import DeckId
 
     from .anki_api import AnkiApi as Anki
@@ -24,33 +26,68 @@ def rule_mapping(anki: Anki) -> dict[DeckId, list[int]]:
 
     return ret
 
+YOUNG_SEARCH = '-is:new prop:ivl<21 -is:suspended'
+
+def group_deck_ids_csv(anki: Anki, deck_ids: Iterable[DeckId]) -> str:
+    '''returns "(id1,id2,...)" covering every given deck and all of its subdecks, each id listed once.
+
+    Used by collective rules so that a card is only counted once, even when a rule lists both a
+    parent deck and one or more of its subdecks.'''
+    ids: set[int] = set()
+    for deck_id in deck_ids:
+        ids.update(int(x) for x in re.sub('[()]', '', anki.get_subdeck_ids_csv(deck_id)).split(',') if x.strip())
+    return '(' + ','.join(str(x) for x in sorted(ids)) + ')'
+
+def _did_search(did_csv: str) -> str:
+    return 'did:' + re.sub('[()]', '', did_csv)
+
 # copy the dailyLoad calculation from https://github.com/open-spaced-repetition/fsrs4anki-helper/blob/19581d42a957285a8d949aea0564f81296a62b81/stats.py#L25
-def daily_load(anki: Anki, did: DeckId) -> float:
-    '''Takes in a number deck id, returns the estimated load in reviews per day'''
+def _daily_load_for(anki: Anki, did_csv: str) -> float:
     return (anki.db().first(
         f"""
     SELECT SUM(1.0 / max(1, ivl))
     FROM cards
     WHERE queue != -1 -- not suspended
-    AND did IN {anki.get_subdeck_ids_csv(did)}
+    AND did IN {did_csv}
     AND type != 0 -- not new
     """
     ) or [0])[0] or 0
 
+def daily_load(anki: Anki, did: DeckId) -> float:
+    '''Takes in a number deck id, returns the estimated load in reviews per day'''
+    return _daily_load_for(anki, anki.get_subdeck_ids_csv(did))
+
+def group_daily_load(anki: Anki, deck_ids: Iterable[DeckId]) -> float:
+    '''estimated load in reviews per day across a group of decks, each card counted once'''
+    return _daily_load_for(anki, group_deck_ids_csv(anki, deck_ids))
+
+def young_card_ids(anki: Anki, deck_ids: Iterable[DeckId]) -> list:
+    '''returns the ids of young, non-suspended cards in the given decks and their subdecks, each card once'''
+    return list(anki.col().find_cards(f'{YOUNG_SEARCH} {_did_search(group_deck_ids_csv(anki, deck_ids))}'))
+
 def young(anki: Anki, deck_id: DeckId) -> int:
     '''returns the number of young cards excluding suspended'''
-    did = re.sub('[()]', '', anki.get_subdeck_ids_csv(deck_id))
-    return len(list(anki.col().find_cards(f'-is:new prop:ivl<21 -is:suspended did:{did}')))
+    return len(list(anki.col().find_cards(f'{YOUNG_SEARCH} {_did_search(anki.get_subdeck_ids_csv(deck_id))}')))
+
+def group_young(anki: Anki, deck_ids: Iterable[DeckId]) -> int:
+    '''number of young cards across a group of decks, each card counted once'''
+    return len(young_card_ids(anki, deck_ids))
 
 def soon(anki: Anki, deck_id: DeckId, days: int) -> int:
     '''returns the number of cards about to be due excluding suspended'''
-    did = re.sub('[()]', '', anki.get_subdeck_ids_csv(deck_id))
-    return len(list(anki.col().find_cards(f'prop:due<{days} -is:suspended did:{did}')))
+    return len(list(anki.col().find_cards(f'prop:due<{days} -is:suspended {_did_search(anki.get_subdeck_ids_csv(deck_id))}')))
+
+def group_soon(anki: Anki, deck_ids: Iterable[DeckId], days: int) -> int:
+    '''number of cards about to be due across a group of decks, each card counted once'''
+    return len(list(anki.col().find_cards(f'prop:due<{days} -is:suspended {_did_search(group_deck_ids_csv(anki, deck_ids))}')))
 
 def cards(anki: Anki, deck_id: DeckId) -> int:
     '''returns the number of cards in the deck or it's subdecks'''
-    did = re.sub('[()]', '', anki.get_subdeck_ids_csv(deck_id))
-    return len(list(anki.col().find_cards(f'-is:suspended did:{did}')))
+    return len(list(anki.col().find_cards(f'-is:suspended {_did_search(anki.get_subdeck_ids_csv(deck_id))}')))
+
+def group_cards(anki: Anki, deck_ids: Iterable[DeckId]) -> int:
+    '''number of cards across a group of decks, each card counted once'''
+    return len(list(anki.col().find_cards(f'-is:suspended {_did_search(group_deck_ids_csv(anki, deck_ids))}')))
 
 def seen(anki: Anki, deck_id: DeckId) -> int:
     '''returns the number of seen cards in the deck or it's subdecks'''
@@ -100,18 +137,20 @@ def update_limits(anki: Anki, hook_enabled_config_key: str | None = None, force_
             continue
 
         if is_collective:
-            # --- Collective mode: sum metrics across all decks in the group ---
-            total_deck_size = sum(cards(anki, d.id) for d in group_decks)
+            # --- Collective mode: metrics across all decks in the group, each card counted once ---
+            # (a rule may list a parent deck and its subdecks; their cards must not be counted twice)
+            group_dids = [d.id for d in group_decks]
+            total_deck_size = group_cards(anki, group_dids)
 
             young_card_limit = addon_config_limits.get('youngCardLimit', 999999999)
-            total_young = 0 if young_card_limit > total_deck_size else sum(young(anki, d.id) for d in group_decks)
+            total_young = 0 if young_card_limit > total_deck_size else group_young(anki, group_dids)
 
             load_limit = addon_config_limits.get('loadLimit', 999999999)
-            total_load = 0.0 if load_limit > total_deck_size else sum(daily_load(anki, d.id) for d in group_decks)
+            total_load = 0.0 if load_limit > total_deck_size else group_daily_load(anki, group_dids)
 
             soon_days = addon_config_limits.get('soonDays', 7)
             soon_limit = addon_config_limits.get('soonLimit', 999999999)
-            total_soon = 0 if soon_limit > total_deck_size else sum(soon(anki, d.id, soon_days) for d in group_decks)
+            total_soon = 0 if soon_limit > total_deck_size else group_soon(anki, group_dids, soon_days)
 
             minimum = addon_config_limits.get('minimum', 0)
 
