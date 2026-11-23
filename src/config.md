@@ -30,7 +30,7 @@ Example:
 ```
 This limits the **total** young cards across all 3 German decks to 80, rather than limiting each to 80 independently.
 
-Each card is counted only once, so it is safe to list a parent deck together with some or all of its subdecks (e.g. `["German", "German::Verbs"]`). Use `Tools > Limit New by Young > Show young-count diagnostic` to see the total a collective rule is using and a per-deck breakdown.
+Each card is counted only once, so it is safe to list a parent deck together with some or all of its subdecks (e.g. `["German", "German::Verbs"]`). Use `Tools > Limit New by Young > Show collective count breakdown` to see the total a collective rule is using and a per-deck breakdown.
 
 ### `.limits.[].youngCardLimit`
 

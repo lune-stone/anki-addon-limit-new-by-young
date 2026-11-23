@@ -15,7 +15,7 @@ from types import SimpleNamespace
 from typing import Any, Self
 
 from src.limit import update_limits
-from src.report import collective_young_diagnostic_report, limit_utilization_report_data, utilization_rows_report
+from src.report import collective_count_breakdown_report, limit_utilization_report_data, utilization_rows_report
 
 def create_mock_limit(deck_names: list[str], young: int | None = None, load: float | None = None, soon: int | None = None, soon_days: int | None = None, minimum: int | None = None, collective: bool = False) -> dict[str, Any]:
     ret = {'deckNames': deck_names}
@@ -296,14 +296,14 @@ class Test(unittest.TestCase):
         young_rows = [x for x in data if x.detail_level == 'Verbose' and x.limit_type == 'youngCardLimit']
         self.assertEqual({15}, {x.value for x in young_rows}, 'collective value counts each card once')
 
-        diagnostic = collective_young_diagnostic_report(anki)
-        self.assertIn('Rule #1: 15 of 20 young cards used (75.00%).', diagnostic)
-        self.assertIn('5 overlapping young cards were counted only once', diagnostic)
+        breakdown = collective_count_breakdown_report(anki)
+        self.assertIn('Rule #1: 15 of 20 young cards used (75.00%).', breakdown)
+        self.assertIn('5 overlapping young cards were counted only once', breakdown)
 
-    def test_diagnostic_ignores_non_collective_rules(self: Self) -> None:
+    def test_breakdown_ignores_non_collective_rules(self: Self) -> None:
         deck = create_mock_deck(id=1, name='A', cards=1000, young=3, load=0.0, soon=0, new=None, new_limit=None, max_new=10)
         anki = create_mock_anki([create_mock_limit(deck_names=['A'], young=5)], [deck])
-        self.assertEqual('No collective youngCardLimit rules matched any decks.', collective_young_diagnostic_report(anki))
+        self.assertEqual('No collective youngCardLimit rules matched any decks.', collective_count_breakdown_report(anki))
 
 
 if __name__ == '__main__':

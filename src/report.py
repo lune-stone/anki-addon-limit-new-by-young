@@ -51,7 +51,7 @@ def text_dialog(message: str, title: str) -> None:
     dialog.show()
 
 
-def collective_young_diagnostic_report(anki: Anki) -> str:
+def collective_count_breakdown_report(anki: Anki) -> str:
     """Explain how collective youngCardLimit rules arrive at their young-card count.
 
     Collective rules count every card once, even when a rule lists both a parent
@@ -184,13 +184,6 @@ def utilization_dialog(anki: Anki) -> None:
             lines.append('')
             lines.extend([str(x) for x in d if x.detail_level == 'Summary'])
         else:
-            lines.append('=== Collective Young Count Diagnostic ===')
-            lines.append('')
-            lines.extend(collective_young_diagnostic_report(anki).splitlines())
-
-            lines.append('')
-            lines.append('')
-
             lines.append('=== Young Limit ===')
             lines.append('')
             lines.extend(utilization_rows_report([x for x in d if x.limit_type == 'youngCardLimit' and x.detail_level == 'Verbose']))
