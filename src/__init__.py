@@ -13,7 +13,12 @@ from aqt.utils import openLink, qconnect
 
 from .anki_api import AnkiApi as Anki
 from .limit import update_limits
-from .report import rule_mapping_report, text_dialog, utilization_dialog
+from .report import (
+    collective_count_breakdown_report,
+    rule_mapping_report,
+    text_dialog,
+    utilization_dialog,
+)
 
 
 def exec_in_background(func: Callable) -> Callable:
@@ -52,6 +57,10 @@ def init() -> None:
     limit_utilization_report_action = qt.QAction("Show limit utilization report", menu)
     qconnect(limit_utilization_report_action.triggered, lambda: utilization_dialog(anki))
     menu.addAction(limit_utilization_report_action)
+
+    collective_count_breakdown_action = qt.QAction("Show collective count breakdown", menu)
+    qconnect(collective_count_breakdown_action.triggered, lambda: text_dialog(collective_count_breakdown_report(anki), 'Collective Count Breakdown'))
+    menu.addAction(collective_count_breakdown_action)
 
     documentation_action = qt.QAction("Documentation", menu)
     qconnect(documentation_action.triggered, lambda: openLink('https://github.com/lune-stone/anki-addon-limit-new-by-young'))

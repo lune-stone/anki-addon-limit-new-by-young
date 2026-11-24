@@ -30,6 +30,8 @@ Example:
 ```
 This limits the **total** young cards across all 3 German decks to 80, rather than limiting each to 80 independently.
 
+Each card is counted only once, so it is safe to list a parent deck together with some or all of its subdecks (e.g. `["German", "German::Verbs"]`). Use `Tools > Limit New by Young > Show collective count breakdown` to see the total a collective rule is using and a per-deck breakdown.
+
 ### `.limits.[].youngCardLimit`
 
 A positive integer that represents the number of young cards that the deck should not go over when adding new cards for the day. This value does not replace existing daily limits on new cards but will work together with them. For example if there are too many reviews in addition to too many young cards for today, then the new card limit for the day will be set to the minimum value between the two limits.
